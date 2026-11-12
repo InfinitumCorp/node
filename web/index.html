@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Nøde — free community Wi-Fi</title>
+  <meta name="description" content="Free Wi-Fi from neighbours, venues and Nøde routers. You choose what you share.">
+  <meta name="theme-color" content="#0b0f14">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/amplitude.vendor.js" defer></script>
+  <script src="/amplitude-boot.js" defer></script>
+  <script src="/app.js" type="module"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#/find" aria-label="Nøde home"><span class="mark" aria-hidden="true">ø</span> Nøde</a>
+    <div data-cumulus-bar></div>
+  </header>
+
+  <nav class="tabs" aria-label="Sections">
+    <a href="#/find" data-tab="find">Find Wi-Fi</a>
+    <a href="#/privacy" data-tab="privacy">Your data</a>
+    <a href="#/host" data-tab="host">Host</a>
+  </nav>
+
+  <main id="view" tabindex="-1"></main>
+
+  <template id="signin">
+    <section class="card center">
+      <h2>Sign in to continue</h2>
+      <p>Nøde uses your Cumulus ID. No separate password.</p>
+      <div class="row">
+        <button class="primary" data-action="signin">Sign in with Cumulus ID</button>
+        <button data-action="create">Create a Cumulus ID</button>
+      </div>
+      <p class="fine">Creating one brings you straight back here, signed in.</p>
+    </section>
+  </template>
+
+  <footer class="foot">
+    <p>Free basic access. Nothing optional is ever required to get online. <a href="#/privacy">What we collect</a></p>
+  </footer>
+</body>
+</html>

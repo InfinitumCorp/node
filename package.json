@@ -1,0 +1,15 @@
+{
+  "name": "node-network",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nøde: free community Wi-Fi from fixed gateways and participating hosts, funded by privacy-safe aggregated data products.",
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "start": "node src/server.ts",
+    "dev": "node --watch src/server.ts",
+    "add-buyer": "node scripts/add-buyer.ts",
+    "test": "node --test test/"
+  },
+  "license": "UNLICENSED"
+}
