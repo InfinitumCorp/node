@@ -53,4 +53,4 @@ node scripts/add-buyer.ts "Metro ISP planning" LIC-2026-001 connectivity
 
 - Native Android/iOS host agents. Third-party apps can't switch on tethering for the user; phone hosting needs device-by-device testing (Android Wi-Fi Aware / local-only hotspot give no internet; iOS Multipeer stops in the background). The web app records limits and shows battery state; enforcement today is on Nøde routers.
 - Router ↔ API sync (routers are configured locally; the app's start/stop is mirrored by `uci set node.settings.active`).
-- The `node` client must be registered with Cumulus ID (`InfinitumCorp/cumulus-id`, `src/clients.ts`) before sign-in works in production.
+- Cumulus ID client `node` is registered in InfinitumCorp/infinitum-nexus (`packages/cid/src/id-clients.ts`, PR #175) for `https://node.infinitumcorporation.ai`. Sign-in works once that PR is merged and deployed and Nøde is served from that origin. In Russia, set `CID_PUBLIC_ISSUER=https://ru.id.cumuluscloud.app` (the mirror that forwards to the main issuer).
