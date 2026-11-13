@@ -13,13 +13,22 @@ mirror carry the main issuer, so the Worker verifies them the same way. `/api/*`
 marked `private, no-store` so the CDN never serves the mirror's config on the main site or the
 other way round. Cookies and client IPs are not passed on (Nøde uses neither).
 
+## Status (2026-11-13)
+
+- Cloud Run `node-mirror` is live: https://node-mirror-325535919239.europe-north1.run.app
+- The Worker answers the mirror with `ru.id.cumuluscloud.app`; Cumulus ID client `node` accepts
+  `node-ru.infinitumcorporation.ai` and `node-ru.web.app` (infinitum-nexus #209, deployed).
+- Not done: Firebase is not enabled on `scalvs-mirror` yet (step 2 needs it), so the Hosting site and
+  the custom domain don't exist. Until then sign-in only completes on the main site.
+
 ## Set up (Google Cloud project `scalvs-mirror`, which already hosts the other mirrors)
 
 1. Deploy the pass-through:
 
        gcloud run deploy node-mirror --source . --project scalvs-mirror --region europe-north1 --allow-unauthenticated --set-env-vars UPSTREAM=https://node.infinitumcorporation.ai,PUBLIC_ORIGIN=https://node-ru.infinitumcorporation.ai --memory 256Mi --max-instances 3
 
-2. Create the Hosting site and deploy `firebase.json`:
+2. Once: enable Firebase on the project (Firebase console > Add project > pick `scalvs-mirror`,
+   accept the terms). Then, with `GOOGLE_CLOUD_QUOTA_PROJECT=scalvs-mirror` set, create the Hosting site and deploy `firebase.json`:
 
        npx -y firebase-tools@14 hosting:sites:create node-ru --project scalvs-mirror
        npx -y firebase-tools@14 deploy --only hosting --project scalvs-mirror
