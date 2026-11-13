@@ -24,8 +24,8 @@ async function boot() {
   const srv = createServer(handler);
   await new Promise<void>((r) => srv.listen(0, r));
   const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
-  const call = async (method: string, path: string, opts: { as?: string; body?: unknown; key?: string } = {}) => {
-    const headers: Record<string, string> = { "content-type": "application/json" };
+  const call = async (method: string, path: string, opts: { as?: string; body?: unknown; key?: string; headers?: Record<string, string> } = {}) => {
+    const headers: Record<string, string> = { "content-type": "application/json", ...opts.headers };
     if (opts.as) headers.authorization = `Bearer ${opts.as}`;
     if (opts.key) headers["x-node-buyer-key"] = opts.key;
     const r = await fetch(base + path, { method, headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
@@ -33,6 +33,15 @@ async function boot() {
   };
   return { store, call, close: () => srv.close(), tick: (ms: number) => (clock += ms) };
 }
+
+test("the Russian mirror is pointed at the Cumulus ID mirror", async () => {
+  const a = await boot();
+  assert.equal((await a.call("GET", "/api/config")).json.cidIssuer, "https://id.cumuluscloud.app");
+  const via = await a.call("GET", "/api/config", { headers: { "x-node-mirror": "ru" } });
+  assert.equal(via.json.cidIssuer, "https://ru.id.cumuluscloud.app");
+  assert.equal(via.json.cidClient, "node");
+  a.close();
+});
 
 test("geohash round-trips to the same cell", () => {
   const h = geohash(51.5072, -0.1276, 5);

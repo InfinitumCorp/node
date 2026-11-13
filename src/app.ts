@@ -143,7 +143,14 @@ export function createApp(opts: Options) {
     const m = req.method;
 
     if (path === "/api/config" && m === "GET") {
-      return json(200, { cidIssuer: str("CID_PUBLIC_ISSUER") || "https://id.cumuluscloud.app", cidClient: "node", policy: POLICY_VERSION });
+      // Through the Russian mirror (mirror/server.mjs marks its requests), sign-in goes to the
+      // Cumulus ID mirror too, since id.cumuluscloud.app is throttled there. Tokens from either
+      // carry the same issuer, so verification doesn't change.
+      const mirrored = req.headers.get("x-node-mirror") === "ru";
+      const cidIssuer = mirrored
+        ? str("CID_MIRROR_ISSUER") || "https://ru.id.cumuluscloud.app"
+        : str("CID_PUBLIC_ISSUER") || "https://id.cumuluscloud.app";
+      return json(200, { cidIssuer, cidClient: "node", policy: POLICY_VERSION });
     }
     if (path === "/api/purposes" && m === "GET") return json(200, { policy: POLICY_VERSION, purposes: PURPOSES });
     if (path === "/api/jurisdictions" && m === "GET") return json(200, { jurisdictions: JURISDICTIONS });

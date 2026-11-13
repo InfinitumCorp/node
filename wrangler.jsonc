@@ -14,8 +14,10 @@
   },
   "d1_databases": [{ "binding": "DB", "database_name": "node", "database_id": "3fd737cd-cd58-4014-b0c8-9a5f75103094" }],
   "vars": {
-    // Where browsers go to sign in. Russia: set to https://ru.id.cumuluscloud.app (mirror of the main issuer).
-    "CID_PUBLIC_ISSUER": "https://id.cumuluscloud.app"
+    // Where browsers go to sign in on the main site.
+    "CID_PUBLIC_ISSUER": "https://id.cumuluscloud.app",
+    // Where they go when they arrive through the Russian mirror (mirror/), which marks its requests.
+    "CID_MIRROR_ISSUER": "https://ru.id.cumuluscloud.app"
   },
   "observability": { "enabled": true }
 }

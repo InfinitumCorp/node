@@ -1,0 +1,7 @@
+{
+  "hosting": {
+    "site": "node-ru",
+    "public": "empty",
+    "rewrites": [{ "source": "**", "run": { "serviceId": "node-mirror", "region": "europe-north1" } }]
+  }
+}
