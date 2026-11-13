@@ -1,13 +1,13 @@
-import { DatabaseSync } from "node:sqlite";
-import { createHash, randomBytes } from "node:crypto";
 import type { LedgerEntry, Purpose } from "./consent.ts";
 import { geohash, geohashCenter, hourOf, percentile, roundCount, suppress } from "./privacy.ts";
+import { SCHEMA, type Sql } from "./sql.ts";
 
 /**
  * Storage. Two worlds that never join:
  *  - identity: accounts (keyed by Cumulus ID), the consent ledger, hosts and their hotspots;
  *  - analytics: samples keyed by a rotating random session id, a geohash cell and an hour.
  * No analytics table has an account column, and no report reads the identity tables.
+ * Runs on D1 in production and node:sqlite locally (see sql.ts).
  */
 
 export type HotspotKind = "home" | "business" | "relay" | "gateway" | "phone";
@@ -44,36 +44,21 @@ export interface Hotspot {
   updatedAt: number;
 }
 
-const id = (prefix: string) => `${prefix}_${randomBytes(9).toString("base64url")}`;
-export const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
+const b64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const random = (n: number) => b64url(crypto.getRandomValues(new Uint8Array(n)));
+const id = (prefix: string) => `${prefix}_${random(9)}`;
+export async function sha256(s: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(d), (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
-export function openStore(path = ":memory:") {
-  const db = new DatabaseSync(path);
-  db.exec(`
-    PRAGMA journal_mode = WAL;
-    CREATE TABLE IF NOT EXISTS accounts (cid TEXT PRIMARY KEY, jurisdiction TEXT NOT NULL DEFAULT 'OTHER', created_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS consent_ledger (
-      seq INTEGER PRIMARY KEY AUTOINCREMENT, cid TEXT NOT NULL, purpose TEXT NOT NULL,
-      granted INTEGER NOT NULL, policy TEXT NOT NULL, at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS consent_by_cid ON consent_ledger(cid);
-    CREATE TABLE IF NOT EXISTS hotspots (
-      id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, ssid TEXT NOT NULL,
-      area TEXT NOT NULL, active INTEGER NOT NULL, limits TEXT NOT NULL, updated_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS hotspots_by_area ON hotspots(area);
-    -- analytics: no account column, ever
-    CREATE TABLE IF NOT EXISTS quality_samples (
-      hotspot TEXT NOT NULL, area TEXT NOT NULL, hour INTEGER NOT NULL, session TEXT NOT NULL,
-      down_mbps REAL, up_mbps REAL, latency_ms REAL, ok INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS quality_by_area_hour ON quality_samples(area, hour);
-    CREATE TABLE IF NOT EXISTS venue_sessions (hotspot TEXT NOT NULL, hour INTEGER NOT NULL, session TEXT NOT NULL,
-      PRIMARY KEY (hotspot, hour, session));
-    CREATE TABLE IF NOT EXISTS buyers (key_hash TEXT PRIMARY KEY, name TEXT NOT NULL, products TEXT NOT NULL,
-      license TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS report_log (seq INTEGER PRIMARY KEY AUTOINCREMENT, buyer TEXT NOT NULL, product TEXT NOT NULL,
-      query TEXT NOT NULL, rows INTEGER NOT NULL, suppressed INTEGER NOT NULL, at INTEGER NOT NULL);
-  `);
+type Row = Record<string, unknown>;
 
-  const toHotspot = (r: Record<string, unknown>, withOwner = false): Hotspot => {
+export function openStore(sql: Sql) {
+  let ready: Promise<void> | null = null;
+  const init = () => (ready ??= sql.batch(SCHEMA).catch((e) => { ready = null; throw e; }));
+
+  const toHotspot = (r: Row, withOwner = false): Hotspot => {
     const c = geohashCenter(String(r.area));
     return {
       id: String(r.id), name: String(r.name), kind: r.kind as HotspotKind, ssid: String(r.ssid), area: String(r.area),
@@ -82,94 +67,107 @@ export function openStore(path = ":memory:") {
     };
   };
 
-  return {
-    db,
+  const store = {
+    init,
 
     // ---- identity ----
-    ensureAccount(cid: string, jurisdiction?: string, now = Date.now()) {
-      db.prepare("INSERT INTO accounts (cid, jurisdiction, created_at) VALUES (?, ?, ?) ON CONFLICT(cid) DO NOTHING").run(cid, jurisdiction ?? "OTHER", now);
-      if (jurisdiction) db.prepare("UPDATE accounts SET jurisdiction = ? WHERE cid = ?").run(jurisdiction, cid);
-      return db.prepare("SELECT cid, jurisdiction FROM accounts WHERE cid = ?").get(cid) as { cid: string; jurisdiction: string };
+    async ensureAccount(cid: string, jurisdiction?: string, now = Date.now()) {
+      await init();
+      await sql.run("INSERT INTO accounts (cid, jurisdiction, created_at) VALUES (?, ?, ?) ON CONFLICT(cid) DO NOTHING", cid, jurisdiction ?? "OTHER", now);
+      if (jurisdiction) await sql.run("UPDATE accounts SET jurisdiction = ? WHERE cid = ?", jurisdiction, cid);
+      return (await sql.get<{ cid: string; jurisdiction: string }>("SELECT cid, jurisdiction FROM accounts WHERE cid = ?", cid))!;
     },
-    ledger(cid: string): LedgerEntry[] {
-      return (db.prepare("SELECT purpose, granted, policy, at FROM consent_ledger WHERE cid = ? ORDER BY seq").all(cid) as Record<string, unknown>[])
+    async ledger(cid: string): Promise<LedgerEntry[]> {
+      await init();
+      return (await sql.all("SELECT purpose, granted, policy, at FROM consent_ledger WHERE cid = ? ORDER BY seq", cid))
         .map((r) => ({ purpose: r.purpose as Purpose, granted: Boolean(r.granted), policy: String(r.policy), at: Number(r.at) }));
     },
-    record(cid: string, purpose: Purpose, granted: boolean, policy: string, now = Date.now()) {
-      db.prepare("INSERT INTO consent_ledger (cid, purpose, granted, policy, at) VALUES (?, ?, ?, ?, ?)").run(cid, purpose, granted ? 1 : 0, policy, now);
+    async record(cid: string, purpose: Purpose, granted: boolean, policy: string, now = Date.now()) {
+      await init();
+      await sql.run("INSERT INTO consent_ledger (cid, purpose, granted, policy, at) VALUES (?, ?, ?, ?, ?)", cid, purpose, granted ? 1 : 0, policy, now);
     },
     /** Erase a person: account, ledger and hotspots. Analytics were never linked to them. */
-    forget(cid: string) {
-      db.prepare("DELETE FROM consent_ledger WHERE cid = ?").run(cid);
-      db.prepare("DELETE FROM hotspots WHERE owner = ?").run(cid);
-      db.prepare("DELETE FROM accounts WHERE cid = ?").run(cid);
+    async forget(cid: string) {
+      await init();
+      await sql.run("DELETE FROM consent_ledger WHERE cid = ?", cid);
+      await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
+      await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
     },
 
     // ---- hotspots ----
-    addHotspot(owner: string, h: { name: string; kind: HotspotKind; ssid: string; lat: number; lng: number; limits?: Partial<HostLimits> }, now = Date.now()): Hotspot {
+    async addHotspot(owner: string, h: { name: string; kind: HotspotKind; ssid: string; lat: number; lng: number; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot> {
+      await init();
       const hid = id("hs");
       const limits = { ...DEFAULT_LIMITS, ...h.limits, guestIsolation: true as const };
-      // Stored at public precision only: a host's exact address is never kept.
-      db.prepare("INSERT INTO hotspots (id, owner, name, kind, ssid, area, active, limits, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)")
-        .run(hid, owner, h.name, h.kind, h.ssid, geohash(h.lat, h.lng, 7), JSON.stringify(limits), now);
-      return this.hotspot(hid, owner)!;
+      // Stored to about 150 m only: a host's exact address is never kept.
+      await sql.run("INSERT INTO hotspots (id, owner, name, kind, ssid, area, active, limits, updated_at) VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        hid, owner, h.name, h.kind, h.ssid, geohash(h.lat, h.lng, 7), JSON.stringify(limits), now);
+      return (await store.hotspot(hid, owner))!;
     },
-    hotspot(hid: string, owner?: string): Hotspot | null {
-      const r = db.prepare("SELECT * FROM hotspots WHERE id = ?").get(hid) as Record<string, unknown> | undefined;
+    async hotspot(hid: string, owner?: string): Promise<Hotspot | null> {
+      await init();
+      const r = await sql.get("SELECT * FROM hotspots WHERE id = ?", hid);
       if (!r || (owner && r.owner !== owner)) return null;
       return toHotspot(r, Boolean(owner));
     },
-    myHotspots(owner: string): Hotspot[] {
-      return (db.prepare("SELECT * FROM hotspots WHERE owner = ? ORDER BY updated_at DESC").all(owner) as Record<string, unknown>[]).map((r) => toHotspot(r, true));
+    async myHotspots(owner: string): Promise<Hotspot[]> {
+      await init();
+      return (await sql.all("SELECT * FROM hotspots WHERE owner = ? ORDER BY updated_at DESC", owner)).map((r) => toHotspot(r, true));
     },
-    updateHotspot(hid: string, owner: string, patch: { name?: string; active?: boolean; limits?: Partial<HostLimits> }, now = Date.now()): Hotspot | null {
-      const cur = this.hotspot(hid, owner);
+    async updateHotspot(hid: string, owner: string, patch: { name?: string; active?: boolean; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot | null> {
+      const cur = await store.hotspot(hid, owner);
       if (!cur) return null;
       const limits = { ...cur.limits, ...patch.limits, guestIsolation: true as const };
-      db.prepare("UPDATE hotspots SET name = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?")
-        .run(patch.name ?? cur.name, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
-      return this.hotspot(hid, owner);
+      await sql.run("UPDATE hotspots SET name = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?",
+        patch.name ?? cur.name, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
+      return store.hotspot(hid, owner);
     },
     /** Public discovery: active hotspots in the given geohash cells (prefix match). */
-    nearby(cells: string[]): Hotspot[] {
+    async nearby(cells: string[]): Promise<Hotspot[]> {
+      await init();
       const out: Hotspot[] = [];
-      const q = db.prepare("SELECT * FROM hotspots WHERE active = 1 AND area LIKE ? LIMIT 200");
-      for (const c of cells) for (const r of q.all(`${c}%`) as Record<string, unknown>[]) out.push(toHotspot(r));
+      for (const c of cells) for (const r of await sql.all("SELECT * FROM hotspots WHERE active = 1 AND area LIKE ? LIMIT 200", `${c}%`)) out.push(toHotspot(r));
       return out;
     },
 
     // ---- analytics (anonymous) ----
-    addQualitySample(s: { hotspot: string; session: string; downMbps?: number; upMbps?: number; latencyMs?: number; ok: boolean }, now = Date.now()) {
-      const h = db.prepare("SELECT area FROM hotspots WHERE id = ?").get(s.hotspot) as { area: string } | undefined;
+    async addQualitySample(s: { hotspot: string; session: string; downMbps?: number; upMbps?: number; latencyMs?: number; ok: boolean }, now = Date.now()) {
+      await init();
+      const h = await sql.get<{ area: string }>("SELECT area FROM hotspots WHERE id = ?", s.hotspot);
       if (!h) return false;
-      db.prepare("INSERT INTO quality_samples (hotspot, area, hour, session, down_mbps, up_mbps, latency_ms, ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-        .run(s.hotspot, h.area.slice(0, 5), hourOf(now), sha256(s.session), s.downMbps ?? null, s.upMbps ?? null, s.latencyMs ?? null, s.ok ? 1 : 0);
+      await sql.run("INSERT INTO quality_samples (hotspot, area, hour, session, down_mbps, up_mbps, latency_ms, ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        s.hotspot, h.area.slice(0, 5), hourOf(now), await sha256(s.session), s.downMbps ?? null, s.upMbps ?? null, s.latencyMs ?? null, s.ok ? 1 : 0);
       return true;
     },
-    addVenueSession(hotspot: string, session: string, now = Date.now()) {
-      const h = db.prepare("SELECT kind FROM hotspots WHERE id = ?").get(hotspot) as { kind: string } | undefined;
+    async addVenueSession(hotspot: string, session: string, now = Date.now()) {
+      await init();
+      const h = await sql.get<{ kind: string }>("SELECT kind FROM hotspots WHERE id = ?", hotspot);
       if (!h || h.kind !== "business") return false;
-      db.prepare("INSERT OR IGNORE INTO venue_sessions (hotspot, hour, session) VALUES (?, ?, ?)").run(hotspot, hourOf(now), sha256(session));
+      await sql.run("INSERT OR IGNORE INTO venue_sessions (hotspot, hour, session) VALUES (?, ?, ?)", hotspot, hourOf(now), await sha256(session));
       return true;
     },
 
     // ---- buyers and reports ----
-    addBuyer(name: string, products: string[], license: string, now = Date.now()) {
-      const key = `nb_${randomBytes(24).toString("base64url")}`;
-      db.prepare("INSERT INTO buyers (key_hash, name, products, license, created_at) VALUES (?, ?, ?, ?, ?)").run(sha256(key), name, JSON.stringify(products), license, now);
+    async addBuyer(name: string, products: string[], license: string, now = Date.now()) {
+      await init();
+      const key = `nb_${random(24)}`;
+      await sql.run("INSERT INTO buyers (key_hash, name, products, license, created_at) VALUES (?, ?, ?, ?, ?)", await sha256(key), name, JSON.stringify(products), license, now);
       return key; // shown once
     },
-    buyer(key: string): { name: string; products: string[]; license: string } | null {
-      const r = db.prepare("SELECT name, products, license FROM buyers WHERE key_hash = ?").get(sha256(key)) as Record<string, unknown> | undefined;
+    async buyer(key: string): Promise<{ name: string; products: string[]; license: string } | null> {
+      await init();
+      const r = await sql.get("SELECT name, products, license FROM buyers WHERE key_hash = ?", await sha256(key));
       return r ? { name: String(r.name), products: JSON.parse(String(r.products)) as string[], license: String(r.license) } : null;
     },
-    logReport(buyer: string, product: string, query: string, rows: number, suppressed: number, now = Date.now()) {
-      db.prepare("INSERT INTO report_log (buyer, product, query, rows, suppressed, at) VALUES (?, ?, ?, ?, ?, ?)").run(buyer, product, query, rows, suppressed, now);
+    async logReport(buyer: string, product: string, query: string, rows: number, suppressed: number, now = Date.now()) {
+      await init();
+      await sql.run("INSERT INTO report_log (buyer, product, query, rows, suppressed, at) VALUES (?, ?, ?, ?, ?, ?)", buyer, product, query, rows, suppressed, now);
     },
 
-    connectivityReport(area: string, from: number, to: number) {
-      const rows = db.prepare(`SELECT area, hour, session, down_mbps, up_mbps, latency_ms, ok FROM quality_samples
-        WHERE area LIKE ? AND hour >= ? AND hour < ?`).all(`${area}%`, hourOf(from), to) as Record<string, unknown>[];
+    async connectivityReport(area: string, from: number, to: number) {
+      await init();
+      const rows = await sql.all(`SELECT area, hour, session, down_mbps, up_mbps, latency_ms, ok FROM quality_samples
+        WHERE area LIKE ? AND hour >= ? AND hour < ?`, `${area}%`, hourOf(from), to);
       const groups = new Map<string, { area: string; hour: number; sessions: Set<string>; down: number[]; up: number[]; lat: number[]; ok: number; n: number }>();
       for (const r of rows) {
         const k = `${r.area}|${r.hour}`;
@@ -190,14 +188,15 @@ export function openStore(path = ":memory:") {
       return { rows: kept.map(({ key: _k, sessions, ...r }) => ({ ...r, sessions: roundCount(sessions) })), suppressed };
     },
 
-    venueReport(hotspot: string, from: number, to: number) {
-      const all = (db.prepare(`SELECT hour, COUNT(*) AS sessions FROM venue_sessions WHERE hotspot = ? AND hour >= ? AND hour < ? GROUP BY hour ORDER BY hour`)
-        .all(hotspot, hourOf(from), to) as Record<string, unknown>[])
-        .map((r) => ({ key: Number(r.hour), sessions: Number(r.sessions) }));
+    async venueReport(hotspot: string, from: number, to: number) {
+      await init();
+      const all = (await sql.all("SELECT hour, COUNT(*) AS sessions FROM venue_sessions WHERE hotspot = ? AND hour >= ? AND hour < ? GROUP BY hour ORDER BY hour",
+        hotspot, hourOf(from), to)).map((r) => ({ key: Number(r.hour), sessions: Number(r.sessions) }));
       const { rows, suppressed } = suppress(all);
       return { rows: rows.map((r) => ({ hour: new Date(r.key).toISOString(), sessions: roundCount(r.sessions) })), suppressed };
     },
   };
+  return store;
 }
 
 export type Store = ReturnType<typeof openStore>;

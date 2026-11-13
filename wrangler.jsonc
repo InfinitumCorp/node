@@ -1,0 +1,21 @@
+// Nøde on Cloudflare Workers. Deploy: npx wrangler deploy
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "node",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-01",
+  "workers_dev": false,
+  "routes": [{ "pattern": "node.infinitumcorporation.ai", "custom_domain": true }],
+  "assets": {
+    "directory": "./web",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*", "/healthz"],
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [{ "binding": "DB", "database_name": "node", "database_id": "3fd737cd-cd58-4014-b0c8-9a5f75103094" }],
+  "vars": {
+    // Where browsers go to sign in. Russia: set to https://ru.id.cumuluscloud.app (mirror of the main issuer).
+    "CID_PUBLIC_ISSUER": "https://id.cumuluscloud.app"
+  },
+  "observability": { "enabled": true }
+}

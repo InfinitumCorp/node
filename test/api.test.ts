@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { createApp } from "../src/server.ts";
+import { readFileSync } from "node:fs";
+import { createNodeHandler } from "../src/server.ts";
+import { CSP } from "../src/app.ts";
+import { nodeSqlite } from "../src/sqlite-node.ts";
 import { openStore } from "../src/store.ts";
 import { geohash, geohashCenter, suppress } from "../src/privacy.ts";
 import { currentConsent, jurisdiction } from "../src/consent.ts";
@@ -10,9 +13,9 @@ import { currentConsent, jurisdiction } from "../src/consent.ts";
 const T0 = Date.parse("2026-11-12T10:00:00Z");
 
 async function boot() {
-  const store = openStore(":memory:");
+  const store = openStore(nodeSqlite());
   let clock = T0;
-  const { handler } = createApp({
+  const handler = createNodeHandler({
     store,
     env: {},
     now: () => clock,
@@ -99,7 +102,7 @@ test("consent changes are appended to the ledger, not overwritten", async () => 
   const r = await a.call("PUT", "/api/me/consent", { as: "cid_c", body: { choices: { research: false, service: false } } });
   assert.equal(r.json.consent.research.granted, false);
   assert.equal(r.json.consent.service.granted, true, "necessary purpose can't be toggled");
-  assert.deepEqual(a.store.ledger("cid_c").map((e) => e.granted), [true, false]);
+  assert.deepEqual((await a.store.ledger("cid_c")).map((e) => e.granted), [true, false]);
   a.close();
 });
 
@@ -116,10 +119,10 @@ test("reports need a licensed key, suppress small groups, and never carry identi
 
   const area = geohash(40.7128, -74.006, 4);
   assert.equal((await a.call("GET", `/api/reports/connectivity?area=${area}`)).status, 401);
-  const venueOnly = a.store.addBuyer("Venue Co", ["venue_activity"], "LIC-2");
+  const venueOnly = await a.store.addBuyer("Venue Co", ["venue_activity"], "LIC-2");
   assert.equal((await a.call("GET", `/api/reports/connectivity?area=${area}`, { key: venueOnly })).status, 403);
 
-  const key = a.store.addBuyer("ISP Planning", ["connectivity", "venue_activity"], "LIC-1");
+  const key = await a.store.addBuyer("ISP Planning", ["connectivity", "venue_activity"], "LIC-1");
   const rep = await a.call("GET", `/api/reports/connectivity?area=${area}&from=2026-11-12T00:00:00Z&to=2026-11-13T00:00:00Z`, { key });
   assert.equal(rep.status, 200);
   assert.equal(rep.json.rows.length, 1);
@@ -139,16 +142,13 @@ test("erasing an account removes identity data", async () => {
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });
   await a.call("POST", "/api/me/hotspots", { as: "cid_z", body: { name: "Home", kind: "home", lat: 1, lng: 1 } });
   assert.equal((await a.call("DELETE", "/api/me", { as: "cid_z" })).status, 200);
-  assert.equal(a.store.ledger("cid_z").length, 0);
-  assert.equal(a.store.myHotspots("cid_z").length, 0);
+  assert.equal((await a.store.ledger("cid_z")).length, 0);
+  assert.equal((await a.store.myHotspots("cid_z")).length, 0);
   a.close();
 });
 
 test("web app is served with a strict CSP that only adds Amplitude to connect-src", async () => {
-  const a = await boot();
-  const store = a.store;
-  void store;
-  const { handler } = createApp({ store: openStore(":memory:"), env: {}, verify: async () => null });
+  const handler = createNodeHandler({ store: openStore(nodeSqlite()), env: {}, verify: async () => null });
   const srv = createServer(handler);
   await new Promise<void>((r) => srv.listen(0, r));
   const r = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/`);
@@ -156,5 +156,10 @@ test("web app is served with a strict CSP that only adds Amplitude to connect-sr
   assert.match(csp, /connect-src 'self' https:\/\/api2\.amplitude\.com https:\/\/api\.amplitude\.com/);
   assert.match(csp, /script-src 'self';/);
   srv.close();
-  a.close();
+});
+
+test("the Workers static headers carry the same CSP as the app", () => {
+  const headers = readFileSync(new URL("../web/_headers", import.meta.url), "utf8");
+  const line = headers.split(/\r?\n/).find((l) => l.trim().startsWith("Content-Security-Policy:"))!;
+  assert.equal(line.split(": ").slice(1).join(": ").trim(), CSP);
 });

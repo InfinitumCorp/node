@@ -8,7 +8,10 @@ Free community Wi-Fi: fixed gateways at venues and homes, extended by Nøde rout
 
 | Path | What it is |
 |---|---|
-| `src/server.ts` | API and web host (Node ≥ 24, no dependencies, SQLite via `node:sqlite`) |
+| `src/app.ts` | The API (`/api/*`, `/healthz`) on standard Request/Response |
+| `src/worker.ts` | Production: Cloudflare Worker on D1, web app from Workers static assets (`wrangler.jsonc`, `web/_headers`) |
+| `src/server.ts` | Local development and tests: same API on Node ≥ 24, SQLite via `node:sqlite`, no dependencies |
+| `src/sql.ts` | The schema and a small SQL interface over D1 or `node:sqlite` |
 | `src/consent.ts` | Purposes, per-jurisdiction defaults, the append-only consent ledger |
 | `src/privacy.ts` | Geohash coarsening, hour buckets, small-group suppression, count rounding |
 | `src/store.ts` | Identity tables and analytics tables that never join |
@@ -39,6 +42,18 @@ Issue a data-license key (printed once, stored hashed):
 node scripts/add-buyer.ts "Metro ISP planning" LIC-2026-001 connectivity
 ```
 
+## Deploy
+
+Production is a Cloudflare Worker named `node` on the custom domain `node.infinitumcorporation.ai`, with D1 database `node`. The schema is created on first request (`CREATE TABLE IF NOT EXISTS`).
+
+```bash
+npx wrangler@4 deploy
+```
+
+For a production data-license key, add `--d1` to `add-buyer`: it prints the key and an `INSERT` to run with `npx wrangler@4 d1 execute node --remote --command "<sql>"`. Only the key's hash goes into D1.
+
+The CSP is set in two places that must match: `src/app.ts` (API and local server) and `web/_headers` (static assets). A test checks this.
+
 ## How it works
 
 **Roles.** A *user* joins any network named “Nøde”. A *host* chooses, separately, to share part of a connection, with a speed cap, daily data limit, battery and temperature cutoffs, a schedule and a stop button. Guests are always on an isolated network. New hotspots start stopped.
@@ -53,4 +68,4 @@ node scripts/add-buyer.ts "Metro ISP planning" LIC-2026-001 connectivity
 
 - Native Android/iOS host agents. Third-party apps can't switch on tethering for the user; phone hosting needs device-by-device testing (Android Wi-Fi Aware / local-only hotspot give no internet; iOS Multipeer stops in the background). The web app records limits and shows battery state; enforcement today is on Nøde routers.
 - Router ↔ API sync (routers are configured locally; the app's start/stop is mirrored by `uci set node.settings.active`).
-- Cumulus ID client `node` is registered in InfinitumCorp/infinitum-nexus (`packages/cid/src/id-clients.ts`, PR #175) for `https://node.infinitumcorporation.ai`. Sign-in works once that PR is merged and deployed and Nøde is served from that origin. In Russia, set `CID_PUBLIC_ISSUER=https://ru.id.cumuluscloud.app` (the mirror that forwards to the main issuer).
+- Cumulus ID client `node` is registered in InfinitumCorp/infinitum-nexus (`packages/cid/src/id-clients.ts`, merged in PR #175 and live) for `https://node.infinitumcorporation.ai`. In Russia, set `CID_PUBLIC_ISSUER=https://ru.id.cumuluscloud.app` (the mirror that forwards to the main issuer).
