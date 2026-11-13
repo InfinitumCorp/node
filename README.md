@@ -50,6 +50,8 @@ Production is a Cloudflare Worker named `node` on the custom domain `node.infini
 npx wrangler@4 deploy
 ```
 
+The account's "All Workers" Cloudflare Access rule puts a sign-in wall in front of every Worker. Nøde is public through its own Access app, "Nøde (public)", with a bypass-for-everyone policy on `node.infinitumcorporation.ai` only. A new hostname needs the same before the public can reach it.
+
 For a production data-license key, add `--d1` to `add-buyer`: it prints the key and an `INSERT` to run with `npx wrangler@4 d1 execute node --remote --command "<sql>"`. Only the key's hash goes into D1.
 
 The CSP is set in two places that must match: `src/app.ts` (API and local server) and `web/_headers` (static assets). A test checks this.
