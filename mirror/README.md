@@ -15,11 +15,15 @@ other way round. Cookies and client IPs are not passed on (Nøde uses neither).
 
 ## Status (2026-11-13)
 
-- Cloud Run `node-mirror` is live: https://node-mirror-325535919239.europe-north1.run.app
-- The Worker answers the mirror with `ru.id.cumuluscloud.app`; Cumulus ID client `node` accepts
-  `node-ru.infinitumcorporation.ai` and `node-ru.web.app` (infinitum-nexus #209, deployed).
-- Not done: Firebase is not enabled on `scalvs-mirror` yet (step 2 needs it), so the Hosting site and
-  the custom domain don't exist. Until then sign-in only completes on the main site.
+Live:
+- https://node-ru.web.app (Firebase Hosting site `node-ru`, served by Fastly) and
+  https://node-ru.infinitumcorporation.ai (custom domain; Cloudflare CNAME to `node-ru.web.app`, DNS only)
+- Cloud Run `node-mirror` behind them (europe-north1)
+- Sign-in through the mirror goes to `ru.id.cumuluscloud.app`, which accepts both addresses for
+  client `node` (infinitum-nexus #209)
+
+Not checked from a Russian network yet. `ru.id.cumuluscloud.app` itself is served through
+Cloudflare, so if sign-in stalls in Russia, that host needs a Firebase front like this one.
 
 ## Set up (Google Cloud project `scalvs-mirror`, which already hosts the other mirrors)
 
