@@ -30,6 +30,22 @@ export interface HostLimits {
 
 export const DEFAULT_LIMITS: HostLimits = { maxMbps: 10, dailyMb: 2048, minBatteryPct: 40, maxTempC: 42, hours: [], guestIsolation: true };
 
+/** A Nøde router paired to a hotspot. It reads the hotspot's switch and limits with its own key. */
+export interface Router {
+  id: string;
+  hotspot: string;
+  name: string;
+  createdAt: number;
+  lastSeen: number | null;
+  /** What the router last reported: "sharing", or why it isn't ("stopped by host", "too hot (86°C)", ...). */
+  state: string | null;
+  tempC: number | null;
+  /** Guest data today, MB. The host's own figure; never per guest. */
+  usedMb: number | null;
+}
+
+export const MAX_ROUTERS_PER_HOTSPOT = 10;
+
 export interface Hotspot {
   id: string;
   name: string;
@@ -67,6 +83,12 @@ export function openStore(sql: Sql) {
     };
   };
 
+  const toRouter = (r: Row): Router => ({
+    id: String(r.id), hotspot: String(r.hotspot), name: String(r.name), createdAt: Number(r.created_at),
+    lastSeen: r.last_seen == null ? null : Number(r.last_seen), state: r.state == null ? null : String(r.state),
+    tempC: r.temp_c == null ? null : Number(r.temp_c), usedMb: r.used_mb == null ? null : Number(r.used_mb),
+  });
+
   const store = {
     init,
 
@@ -90,6 +112,7 @@ export function openStore(sql: Sql) {
     async forget(cid: string) {
       await init();
       await sql.run("DELETE FROM consent_ledger WHERE cid = ?", cid);
+      await sql.run("DELETE FROM routers WHERE owner = ?", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
     },
@@ -128,6 +151,45 @@ export function openStore(sql: Sql) {
       const out: Hotspot[] = [];
       for (const c of cells) for (const r of await sql.all("SELECT * FROM hotspots WHERE active = 1 AND area LIKE ? LIMIT 200", `${c}%`)) out.push(toHotspot(r));
       return out;
+    },
+
+    // ---- routers ----
+    /** Pairs a router with a hotspot the owner runs. Returns the key once; only its hash is stored. */
+    async addRouter(hotspot: string, owner: string, name: string, now = Date.now()): Promise<{ router: Router; key: string } | null> {
+      if (!(await store.hotspot(hotspot, owner))) return null;
+      const n = await sql.get<{ n: number }>("SELECT COUNT(*) AS n FROM routers WHERE hotspot = ?", hotspot);
+      if (Number(n?.n ?? 0) >= MAX_ROUTERS_PER_HOTSPOT) throw new RangeError(`A hotspot can have up to ${MAX_ROUTERS_PER_HOTSPOT} routers.`);
+      const rid = id("rt");
+      const key = `nr_${random(24)}`;
+      await sql.run("INSERT INTO routers (id, hotspot, owner, name, key_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        rid, hotspot, owner, name, await sha256(key), now);
+      return { router: toRouter((await sql.get("SELECT * FROM routers WHERE id = ?", rid))!), key };
+    },
+    async routers(hotspot: string, owner: string): Promise<Router[]> {
+      await init();
+      return (await sql.all("SELECT * FROM routers WHERE hotspot = ? AND owner = ? ORDER BY created_at", hotspot, owner)).map(toRouter);
+    },
+    async removeRouter(rid: string, hotspot: string, owner: string): Promise<boolean> {
+      await init();
+      const r = await sql.get("SELECT id FROM routers WHERE id = ? AND hotspot = ? AND owner = ?", rid, hotspot, owner);
+      if (!r) return false;
+      await sql.run("DELETE FROM routers WHERE id = ?", rid);
+      return true;
+    },
+    /** The router a key belongs to, with its hotspot. */
+    async routerByKey(key: string): Promise<{ router: Router; hotspot: Hotspot } | null> {
+      await init();
+      if (!/^nr_[A-Za-z0-9_-]{20,64}$/.test(key)) return null;
+      const r = await sql.get("SELECT * FROM routers WHERE key_hash = ?", await sha256(key));
+      if (!r) return null;
+      const h = await store.hotspot(String(r.hotspot), String(r.owner));
+      return h ? { router: toRouter(r), hotspot: h } : null;
+    },
+    async routerSeen(rid: string, report: { state?: string; tempC?: number; usedMb?: number } | null, now = Date.now()) {
+      await init();
+      if (!report) return void (await sql.run("UPDATE routers SET last_seen = ? WHERE id = ?", now, rid));
+      await sql.run("UPDATE routers SET last_seen = ?, state = ?, temp_c = ?, used_mb = ? WHERE id = ?",
+        now, report.state ?? null, report.tempC ?? null, report.usedMb ?? null, rid);
     },
 
     // ---- analytics (anonymous) ----

@@ -26,11 +26,15 @@ reason=""
 [ "$active" = 1 ] || { want=0; reason="stopped by host"; }
 if [ -n "$hours" ] && ! echo " $hours " | grep -q " $hour "; then want=0; reason="${reason:-outside sharing hours}"; fi
 [ "$used_mb" -lt "$daily_mb" ] || { want=0; reason="${reason:-daily limit reached}"; }
+hottest=""
 for z in /sys/class/thermal/thermal_zone*/temp; do
   [ -f "$z" ] || continue
   t=$(( $(cat "$z") / 1000 ))
+  if [ -z "$hottest" ] || [ "$t" -gt "$hottest" ]; then hottest=$t; fi
   [ "$t" -lt 85 ] || { want=0; reason="${reason:-too hot (${t}°C)}"; }
 done
+# For nod-sync to report: state, hottest zone (°C), guest MB today.
+printf '%s\n%s\n%s\n' "$( [ "$want" = 1 ] && echo sharing || echo "$reason" )" "$hottest" "$used_mb" > /tmp/node-state
 
 changed=0
 for iface in $(uci show wireless | sed -n "s/^wireless\.\(node_ap_[^.=]*\)=wifi-iface$/\1/p"); do

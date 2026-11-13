@@ -178,6 +178,47 @@ async function batteryNote() {
   } catch { return ""; }
 }
 
+// A paired router follows this hotspot's switch and limits (firmware/openwrt/nod-sync.sh) and reports back.
+function wireRouters(el, h) {
+  const list = el.querySelector("[data-routers]");
+  const keyBox = el.querySelector("[data-key]");
+  const ago = (t) => {
+    const m = Math.round((Date.now() - t) / 60000);
+    return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+  };
+  async function load() {
+    try {
+      const { routers } = await api("GET", `/api/me/hotspots/${h.id}/routers`);
+      list.textContent = routers.length ? "" : "No router paired. Pair one so it follows Start/Stop and your limits from here.";
+      for (const r of routers) {
+        const row = document.createElement("div");
+        row.className = "row between";
+        const seen = r.lastSeen ? `${esc(r.state ?? "checked in")} · ${ago(r.lastSeen)}` : "Hasn't checked in yet";
+        const extra = [r.tempC != null ? `${r.tempC}°C` : "", r.usedMb != null ? `${r.usedMb} MB shared today` : ""].filter(Boolean).join(" · ");
+        row.innerHTML = `<span><strong>${esc(r.name)}</strong><br>${seen}${extra ? ` · ${esc(extra)}` : ""}</span><button type="button">Unpair</button>`;
+        row.querySelector("button").addEventListener("click", async () => {
+          await api("DELETE", `/api/me/hotspots/${h.id}/routers/${r.id}`);
+          keyBox.textContent = "";
+          load();
+        });
+        list.append(row);
+      }
+    } catch (e) { list.textContent = e.message; }
+  }
+  el.querySelector("[data-pair]").addEventListener("click", async () => {
+    try {
+      const { router, key } = await api("POST", `/api/me/hotspots/${h.id}/routers`, {});
+      keyBox.innerHTML = `<div class="notice"><strong>${esc(router.name)} paired.</strong> Run this on the router now. The key is shown only once; if you lose it, unpair and pair again.
+        <pre class="cmd"></pre><button type="button">Copy</button></div>`;
+      const cmd = `uci set node.settings.key='${key}'; uci commit node; nod-sync`;
+      keyBox.querySelector("pre").textContent = cmd;
+      keyBox.querySelector("button").addEventListener("click", () => navigator.clipboard?.writeText(cmd));
+      load();
+    } catch (e) { keyBox.textContent = e.message; }
+  });
+  load();
+}
+
 async function renderHost() {
   if (!me) {
     view.innerHTML = `<section class="card"><h2>Host Nøde</h2><p class="muted">Share part of your connection with neighbours or customers, within limits you set. It's separate from using Nøde.</p></section>`;
@@ -230,7 +271,9 @@ async function renderHost() {
     el.innerHTML = `<div class="row between"><div><strong>${esc(h.name)}</strong> <span class="tag">${esc(h.kind)}</span><br>
       <span class="muted">${h.active ? "Sharing" : "Stopped"} · ${esc(h.ssid)}</span></div>
       <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? "Stop" : "Start sharing"}</button></div>
-      ${limitsForm(h.limits)}<div class="row start"><button>Save limits</button>${h.kind === "business" ? `<button type="button" data-activity>Busy hours</button>` : ""}</div><div data-out class="fine"></div>`;
+      ${limitsForm(h.limits)}<div class="row start"><button>Save limits</button>${h.kind === "business" ? `<button type="button" data-activity>Busy hours</button>` : ""}</div><div data-out class="fine"></div>
+      ${h.kind === "phone" ? "" : `<h3>Nøde routers</h3><div data-routers class="fine">Loading…</div>
+      <div class="row start"><button type="button" data-pair>Pair a router</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
     el.addEventListener("submit", async (ev) => {
       ev.preventDefault();
@@ -243,6 +286,7 @@ async function renderHost() {
         ? r.rows.map((x) => `${esc(new Date(x.hour).toLocaleString())}: ~${x.sessions} sessions`).join("<br>")
         : `Not enough visits yet to show (hours with fewer than 10 sessions are hidden).`;
     });
+    if (h.kind !== "phone") wireRouters(el, h);
     spots.append(el);
   }
   $("#stopall")?.addEventListener("click", async () => {

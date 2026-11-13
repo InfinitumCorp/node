@@ -29,7 +29,8 @@ async function boot() {
     if (opts.as) headers.authorization = `Bearer ${opts.as}`;
     if (opts.key) headers["x-node-buyer-key"] = opts.key;
     const r = await fetch(base + path, { method, headers, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) });
-    return { status: r.status, json: (await r.json()) as any };
+    const raw = await r.text();
+    return { status: r.status, json: (raw ? JSON.parse(raw) : null) as any };
   };
   return { store, call, close: () => srv.close(), tick: (ms: number) => (clock += ms) };
 }
@@ -143,6 +144,54 @@ test("reports need a licensed key, suppress small groups, and never carry identi
 
   const v = await a.call("GET", `/api/reports/venue-activity?hotspot=${h.id}&from=2026-11-12T00:00:00Z&to=2026-11-13T00:00:00Z`, { key });
   assert.deepEqual(v.json.rows, [{ hour: "2026-11-12T10:00:00.000Z", sessions: 10 }]);
+  a.close();
+});
+
+test("a paired router reads its hotspot's switch and limits, and reports back", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_r", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_r", body: { name: "Flat", kind: "home", ssid: "Nøde Flat", lat: 1, lng: 1, limits: { maxMbps: 15, hours: [7, 8] } } })).json.hotspot;
+  const base = `/api/me/hotspots/${h.id}/routers`;
+
+  assert.equal((await a.call("POST", base, { as: "cid_other", body: {} })).status, 404, "only the host can pair");
+  const made = await a.call("POST", base, { as: "cid_r", body: {} });
+  assert.equal(made.status, 201);
+  assert.equal(made.json.router.name, "Router 1");
+  assert.match(made.json.key, /^nr_/);
+  const bearer = { authorization: `Bearer ${made.json.key}` };
+
+  assert.equal((await a.call("GET", "/api/router/config")).status, 401);
+  assert.equal((await a.call("GET", "/api/router/config", { headers: { authorization: "Bearer nr_wrongwrongwrongwrongwrong" } })).status, 401);
+  assert.equal((await a.call("GET", `/api/router/config?key=${made.json.key}`)).status, 401, "never a key in the URL");
+  let cfg = await a.call("GET", "/api/router/config", { headers: bearer });
+  assert.equal(cfg.status, 200);
+  assert.deepEqual(cfg.json, { hotspot: h.id, name: "Flat", ssid: "Nøde Flat", active: false, limits: { maxMbps: 15, dailyMb: 2048, hours: [7, 8], maxTempC: 42 }, poll: 300 });
+
+  await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_r", body: { active: true } });
+  cfg = await a.call("GET", "/api/router/config", { headers: bearer });
+  assert.equal(cfg.json.active, true, "the app's start button reaches the router");
+
+  assert.equal((await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "sharing", tempC: 51.4, usedMb: 120 } })).status, 204);
+  assert.equal((await a.call("POST", "/api/router/status", { headers: bearer, body: { tempC: 5 } })).status, 400);
+  const list = await a.call("GET", base, { as: "cid_r" });
+  assert.equal(list.json.routers.length, 1);
+  assert.equal(list.json.routers[0].state, "sharing");
+  assert.equal(list.json.routers[0].tempC, 51);
+  assert.equal(list.json.routers[0].usedMb, 120);
+  assert.equal(list.json.routers[0].lastSeen, T0);
+  assert.ok(!JSON.stringify(list.json).includes(made.json.key), "the key is shown once only");
+
+  // Stopping hosting entirely reaches the router too.
+  await a.call("PUT", "/api/me/consent", { as: "cid_r", body: { choices: { host_bandwidth: false } } });
+  assert.equal((await a.call("GET", "/api/router/config", { headers: bearer })).json.active, false);
+
+  assert.equal((await a.call("DELETE", `${base}/${made.json.router.id}`, { as: "cid_other" })).status, 404);
+  assert.equal((await a.call("DELETE", `${base}/${made.json.router.id}`, { as: "cid_r" })).status, 200);
+  assert.equal((await a.call("GET", "/api/router/config", { headers: bearer })).status, 401, "unpairing revokes the key");
+
+  const again = await a.call("POST", base, { as: "cid_r", body: { name: "Hall" } });
+  await a.call("DELETE", "/api/me", { as: "cid_r" });
+  assert.equal((await a.call("GET", "/api/router/config", { headers: { authorization: `Bearer ${again.json.key}` } })).status, 401, "erasing the account removes routers");
   a.close();
 });
 

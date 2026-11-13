@@ -34,6 +34,10 @@ export const SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS hotspots (id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, kind TEXT NOT NULL, ssid TEXT NOT NULL,
     area TEXT NOT NULL, active INTEGER NOT NULL, limits TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS hotspots_by_area ON hotspots(area)`,
+  // Nøde routers paired to a hotspot. Only the key's hash is kept; the key is shown once.
+  `CREATE TABLE IF NOT EXISTS routers (id TEXT PRIMARY KEY, hotspot TEXT NOT NULL, owner TEXT NOT NULL, name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_seen INTEGER, state TEXT, temp_c INTEGER, used_mb INTEGER)`,
+  `CREATE INDEX IF NOT EXISTS routers_by_hotspot ON routers(hotspot)`,
   // analytics: no account column, ever
   `CREATE TABLE IF NOT EXISTS quality_samples (hotspot TEXT NOT NULL, area TEXT NOT NULL, hour INTEGER NOT NULL, session TEXT NOT NULL,
     down_mbps REAL, up_mbps REAL, latency_ms REAL, ok INTEGER NOT NULL)`,

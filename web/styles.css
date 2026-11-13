@@ -47,3 +47,4 @@ input[type=text], input[type=number], select { width: 100%; font: inherit; paddi
 .row.start { justify-content: flex-start; }
 .row.between { justify-content: space-between; align-items: center; }
 .tag { white-space: nowrap; flex: none; align-self: flex-start; }
+.cmd { white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, monospace; font-size: 13px; background: var(--bg, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }

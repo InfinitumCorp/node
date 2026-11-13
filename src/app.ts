@@ -18,7 +18,12 @@ import { HOTSPOT_KINDS, type HostLimits, type HotspotKind, type Store } from "./
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
  *   PATCH /api/me/hotspots/:id            (CID) name, active (the stop button), limits
  *   GET  /api/me/hotspots/:id/activity    (CID) the venue's own busy-hours report
- *   POST /api/telemetry                   anonymous: { hotspot, session, kind: "quality"|"visit", ... }
+ *   GET  /api/me/hotspots/:id/routers     (CID) paired Nøde routers and what they last reported
+ *   POST /api/me/hotspots/:id/routers     (CID) { name? } pair a router; the key is shown once
+ *   DELETE /api/me/hotspots/:id/routers/:rid  (CID) unpair; the key stops working at once
+ *   GET  /api/router/config               (router key) the hotspot's switch and limits, for nod-sync
+ *   POST /api/router/status               (router key) { state, tempC?, usedMb? }
+ *   POST /api/telemetry                  anonymous: { hotspot, session, kind: "quality"|"visit", ... }
  *   GET  /api/reports/connectivity?area&from&to       (buyer key) aggregated, small groups suppressed
  *   GET  /api/reports/venue-activity?hotspot&from&to  (buyer key)
  */
@@ -208,6 +213,33 @@ export function createApp(opts: Options) {
       return json(200, { product: "venue_activity", license: b.license, minGroup: 10, ...r });
     }
 
+    if (path === "/api/router/config" || path === "/api/router/status") {
+      // Routers authenticate with their own key, in the Authorization header only (never in a URL).
+      const auth = req.headers.get("authorization") ?? "";
+      const key = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      const found = key ? await store.routerByKey(key) : null;
+      if (!found) throw new HttpError(401, "Unknown router key. Pair the router again in the Host tab.");
+      const { router, hotspot: h } = found;
+      if (path === "/api/router/config" && m === "GET") {
+        await store.routerSeen(router.id, null, now());
+        return json(200, {
+          hotspot: h.id, name: h.name, ssid: h.ssid, active: h.active,
+          limits: { maxMbps: Math.max(1, Math.round(h.limits.maxMbps)), dailyMb: Math.round(h.limits.dailyMb), hours: h.limits.hours, maxTempC: h.limits.maxTempC },
+          poll: 300,
+        });
+      }
+      if (path === "/api/router/status" && m === "POST") {
+        const b = await body(req, 2048);
+        await store.routerSeen(router.id, {
+          state: text(b.state, 60, "state"),
+          tempC: b.tempC == null ? undefined : Math.round(num(b.tempC, -40, 150, "tempC")),
+          usedMb: b.usedMb == null ? undefined : Math.round(num(b.usedMb, 0, 10_000_000, "usedMb")),
+        }, now());
+        return new Response(null, { status: 204, headers: { "cache-control": "no-store" } });
+      }
+      throw new HttpError(405, "Method not allowed.");
+    }
+
     if (path === "/api/me" || path.startsWith("/api/me/")) {
       const p = await person(req, url);
       if (path === "/api/me" && m === "GET") {
@@ -267,6 +299,27 @@ export function createApp(opts: Options) {
         if (!(await store.hotspot(hm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
         const to = now();
         return json(200, await store.venueReport(hm[1]!, to - 7 * 86_400_000, to));
+      }
+      const rm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})\/routers(?:\/(rt_[A-Za-z0-9_-]{6,20}))?$/.exec(path);
+      if (rm) {
+        const [, hid, rid] = rm as unknown as [string, string, string | undefined];
+        if (!(await store.hotspot(hid, p.cid))) throw new HttpError(404, "No such hotspot.");
+        if (!rid && m === "GET") return json(200, { routers: await store.routers(hid, p.cid) });
+        if (!rid && m === "POST") {
+          const b = await body(req);
+          const existing = await store.routers(hid, p.cid);
+          const name = b.name == null || b.name === "" ? `Router ${existing.length + 1}` : text(b.name, 40, "name");
+          let made;
+          try { made = await store.addRouter(hid, p.cid, name, now()); }
+          catch (e) { if (e instanceof RangeError) throw new HttpError(409, e.message); throw e; }
+          if (!made) throw new HttpError(404, "No such hotspot.");
+          return json(201, made);
+        }
+        if (rid && m === "DELETE") {
+          if (!(await store.removeRouter(rid, hid, p.cid))) throw new HttpError(404, "No such router.");
+          return json(200, { removed: true });
+        }
+        throw new HttpError(405, "Method not allowed.");
       }
     }
     throw new HttpError(404, "Not found.");

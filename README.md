@@ -66,8 +66,17 @@ The CSP is set in two places that must match: `src/app.ts` (API and local server
 
 **Analytics.** Amplitude Browser SDK 2.49.2, vendored, US region, page views and sessions only; everything else off. CSP adds only `api2.amplitude.com` and `api.amplitude.com` to `connect-src`.
 
+## Router sync
+
+Pair a Nøde router in the app (Host → your hotspot → Pair a router). The key is shown once; on the router:
+
+```sh
+uci set node.settings.key='nr_...'; uci commit node; nod-sync
+```
+
+Every 5 minutes `nod-sync` (cron, installed by `nod-setup.sh`) fetches `GET /api/router/config` with `Authorization: Bearer <key>`, applies the start/stop switch, speed cap, daily data cap, hours and network name, runs `nod-limits`, then posts `{state, tempC, usedMb}` to `/api/router/status`. The Host tab shows what each router last reported. Only the host's own totals are sent, never anything about guests. The server stores a SHA-256 hash of the key, not the key. Unreachable server: the router keeps its last settings. In Russia set `uci set node.settings.api='https://node-ru.infinitumcorporation.ai'`.
+
 ## Not built yet
 
 - Native Android/iOS host agents. Third-party apps can't switch on tethering for the user; phone hosting needs device-by-device testing (Android Wi-Fi Aware / local-only hotspot give no internet; iOS Multipeer stops in the background). The web app records limits and shows battery state; enforcement today is on Nøde routers.
-- Router ↔ API sync (routers are configured locally; the app's start/stop is mirrored by `uci set node.settings.active`).
-- Cumulus ID client `node` is registered in InfinitumCorp/infinitum-nexus (`packages/cid/src/id-clients.ts`, merged in PR #175 and live) for `https://node.infinitumcorporation.ai`. In Russia, set `CID_PUBLIC_ISSUER=https://ru.id.cumuluscloud.app` (the mirror that forwards to the main issuer).
+- Cumulus ID client `node` is registered in InfinitumCorp/infinitum-nexus (`packages/cid/src/id-clients.ts`, merged in PR #175 and live) for `https://node.infinitumcorporation.ai`. People who open Nøde through the Russian mirror (`node-ru.infinitumcorporation.ai`) sign in at `https://ru.id.cumuluscloud.app` (`CID_MIRROR_ISSUER`) automatically.

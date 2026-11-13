@@ -11,6 +11,9 @@
 #  - SQM caps on guest traffic from /etc/config/node (max_mbps), so the host's own use comes first.
 #  - A daily data cap and schedule are enforced by nod-limits.sh (installed to cron).
 #
+#  - Paired with the app (NODE_KEY=nr_... from Host > Pair a router), nod-sync.sh follows the app's
+#    start/stop switch and limits and reports back. Needs curl for that (opkg install curl).
+#
 # Run it on a test router first. It changes wireless, network and firewall config, then reloads them.
 set -eu
 
@@ -27,10 +30,16 @@ case "$ROLE" in home|business|relay|gateway) ;; *) echo "ROLE must be home, busi
 if [ "$MESH" = 1 ] && [ "${#MESH_KEY}" -lt 32 ]; then echo "MESH=1 needs MESH_KEY of at least 32 characters (keep it out of git)" >&2; exit 1; fi
 [ "$ROLE" != relay ] || [ "$MESH" = 1 ] || { echo "A relay only makes sense with MESH=1" >&2; exit 1; }
 
-# ---- Nøde settings, read by nod-limits.sh ----
+# ---- Nøde settings, read by nod-limits.sh and nod-sync.sh ----
+# A router key from the app (Host > Pair a router) survives re-running setup.
+NODE_KEY="${NODE_KEY:-$(uci -q get node.settings.key || true)}"
+NODE_API="${NODE_API:-$(uci -q get node.settings.api || echo https://node.infinitumcorporation.ai)}"
 uci -q delete node.settings || true
 touch /etc/config/node
+chmod 600 /etc/config/node   # holds the router key
 uci set node.settings=node
+uci set node.settings.api="$NODE_API"
+[ -z "$NODE_KEY" ] || uci set node.settings.key="$NODE_KEY"
 uci set node.settings.role="$ROLE"
 uci set node.settings.max_mbps="$MAX_MBPS"
 uci set node.settings.daily_mb="$DAILY_MB"
@@ -141,9 +150,14 @@ fi
 
 uci commit
 cp "$(dirname "$0")/nod-limits.sh" /usr/sbin/nod-limits && chmod 755 /usr/sbin/nod-limits
-grep -q nod-limits /etc/crontabs/root 2>/dev/null || echo '*/5 * * * * /usr/sbin/nod-limits' >> /etc/crontabs/root
+cp "$(dirname "$0")/nod-sync.sh" /usr/sbin/nod-sync && chmod 755 /usr/sbin/nod-sync
+# nod-sync fetches the app's settings when the router is paired, then runs nod-limits either way.
+touch /etc/crontabs/root
+sed -i '/nod-limits\|nod-sync/d' /etc/crontabs/root
+echo '*/5 * * * * /usr/sbin/nod-sync' >> /etc/crontabs/root
 /etc/init.d/cron restart >/dev/null 2>&1 || true
 /etc/init.d/network reload
 /etc/init.d/firewall reload
 [ -x /etc/init.d/sqm ] && /etc/init.d/sqm reload || true
-echo "Nøde $ROLE configured. Sharing is OFF until you start it: uci set node.settings.active=1; uci commit node; nod-limits"
+if [ -n "$NODE_KEY" ]; then echo "Nøde $ROLE configured and paired. Start sharing from the app; the router follows within 5 minutes."
+else echo "Nøde $ROLE configured. Sharing is OFF. Pair it in the app (Host > Pair a router), or start it by hand: uci set node.settings.active=1; uci commit node; nod-limits"; fi
