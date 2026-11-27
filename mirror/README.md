@@ -13,7 +13,7 @@ mirror carry the main issuer, so the Worker verifies them the same way. `/api/*`
 marked `private, no-store` so the CDN never serves the mirror's config on the main site or the
 other way round. Cookies and client IPs are not passed on (Nøde uses neither).
 
-## Status (2026-11-13)
+## Status (2026-11-27)
 
 Live:
 - https://node-ru.web.app (Firebase Hosting site `node-ru`, served by Fastly) and
@@ -22,8 +22,13 @@ Live:
 - Sign-in through the mirror goes to `ru.id.cumuluscloud.app`, which accepts both addresses for
   client `node` (infinitum-nexus #209)
 
-Not checked from a Russian network yet. `ru.id.cumuluscloud.app` itself is served through
-Cloudflare, so if sign-in stalls in Russia, that host needs a Firebase front like this one.
+- `ru.id.cumuluscloud.app` has its own Firebase front too (site `cumulus-id-ru`, Cloud Run
+  `cumulus-id-ru`, switched 2026-11-14; infinitum-nexus #215), so the whole sign-in path is off
+  Cloudflare in Russia.
+- Routers install through the mirror as well: `/firmware/openwrt/nod-install.sh` with
+  `NODE_API=https://node-ru.infinitumcorporation.ai`.
+
+Not checked from a Russian network yet.
 
 ## Set up (Google Cloud project `scalvs-mirror`, which already hosts the other mirrors)
 
