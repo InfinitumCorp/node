@@ -181,6 +181,10 @@
                     },
                     "policy": {
                       "type": "string"
+                    },
+                    "lang": {
+                      "type": "string",
+                      "description": "\"ru\" through the Russian mirror"
                     }
                   }
                 }
@@ -251,7 +255,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Nearest first, with distanceKm",
+            "description": "Nearest first, with distanceKm. verified: a paired router reported sharing in the last 20 minutes; router-paired hotspots are listed only then.",
             "content": {
               "application/json": {
                 "schema": {
