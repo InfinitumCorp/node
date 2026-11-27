@@ -19,7 +19,7 @@ Free community Wi-Fi: fixed gateways at venues and homes, extended by Nøde rout
 | `web/` | The Nøde web app (installable PWA): find Wi-Fi, your data choices, host controls |
 | `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps, schedule and daily limit |
 | `web/openapi.json` | OpenAPI 3.1 description of the API (served at `/openapi.json`; a test checks it covers every route) |
-| `docs/` | [Data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
+| `docs/` | [Hosting guide](docs/HOSTING.md) ([по-русски](docs/HOSTING.ru.md)), [data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
 
 ## Run it
 
@@ -75,7 +75,7 @@ On an OpenWrt 23.05+ router (`ssh root@192.168.1.1`), one command downloads the 
 wget -qO /tmp/nod-install.sh https://node.infinitumcorporation.ai/firmware/openwrt/nod-install.sh && ROLE=home NODE_KEY='nr_...' sh /tmp/nod-install.sh
 ```
 
-In Russia use `https://node-ru.infinitumcorporation.ai` in both places (`NODE_API=https://node-ru.infinitumcorporation.ai`); the router then talks to the mirror. The site serves copies of `firmware/openwrt/` from `web/firmware/openwrt/`: after editing a script run `node scripts/sync-firmware.mjs` (a test fails if the copies are stale).
+To remove Nøde from a router: `nod-uninstall.sh` (same place). In Russia use `https://node-ru.infinitumcorporation.ai` in both places (`NODE_API=https://node-ru.infinitumcorporation.ai`); the router then talks to the mirror. The site serves copies of `firmware/openwrt/` from `web/firmware/openwrt/`: after editing a script run `node scripts/sync-firmware.mjs` (a test fails if the copies are stale).
 
 ## Router sync
 
