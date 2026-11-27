@@ -17,3 +17,13 @@ test("every router script parses as POSIX sh", (t) => {
     execFileSync("sh", ["-n", new URL(f, dir).pathname.replace(/^\/([A-Za-z]:)/, "$1")]);
   }
 });
+
+test("the OpenAPI document lists every route the API documents", async () => {
+  const { readFileSync } = await import("node:fs");
+  const spec = JSON.parse(readFileSync(new URL("../web/openapi.json", import.meta.url), "utf8"));
+  const header = readFileSync(new URL("../src/app.ts", import.meta.url), "utf8").split("*/")[0]!;
+  const routes = [...header.matchAll(/^\s*\*\s+(GET|POST|PUT|PATCH|DELETE)\s+(\/\S+)/gm)]
+    .map(([, m, p]) => [m!.toLowerCase(), p!.replace(/\?.*$/, "").replace(/:rid/, "{rid}").replace(/:id/, "{id}")] as const);
+  assert.ok(routes.length > 10);
+  for (const [m, p] of routes) assert.ok(spec.paths[p]?.[m], `${m.toUpperCase()} ${p} missing from web/openapi.json`);
+});
