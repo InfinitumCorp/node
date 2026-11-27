@@ -66,6 +66,16 @@ The CSP is set in two places that must match: `src/app.ts` (API and local server
 
 **Analytics.** Amplitude Browser SDK 2.49.2, vendored, US region, page views and sessions only; everything else off. CSP adds only `api2.amplitude.com` and `api.amplitude.com` to `connect-src`.
 
+## Install on a router
+
+On an OpenWrt 23.05+ router (`ssh root@192.168.1.1`), one command downloads the scripts, checks them against `SHA256SUMS`, installs curl if needed and runs the setup:
+
+```sh
+wget -qO /tmp/nod-install.sh https://node.infinitumcorporation.ai/firmware/openwrt/nod-install.sh && ROLE=home NODE_KEY='nr_...' sh /tmp/nod-install.sh
+```
+
+In Russia use `https://node-ru.infinitumcorporation.ai` in both places (`NODE_API=https://node-ru.infinitumcorporation.ai`); the router then talks to the mirror. The site serves copies of `firmware/openwrt/` from `web/firmware/openwrt/`: after editing a script run `node scripts/sync-firmware.mjs` (a test fails if the copies are stale).
+
 ## Router sync
 
 Pair a Nøde router in the app (Host → your hotspot → Pair a router). The key is shown once; on the router:
