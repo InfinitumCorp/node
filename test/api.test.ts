@@ -195,6 +195,28 @@ test("a paired router reads its hotspot's switch and limits, and reports back", 
   a.close();
 });
 
+test("a hotspot with routers is on the map only while a router says it is sharing", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_l", body: { choices: { host_bandwidth: true } } });
+  const mk = async (name: string) => (await a.call("POST", "/api/me/hotspots", { as: "cid_l", body: { name, kind: "home", lat: 52.52, lng: 13.405 } })).json.hotspot;
+  const plain = await mk("Venue Wi-Fi"), routed = await mk("Routed");
+  for (const h of [plain, routed]) await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_l", body: { active: true } });
+  const names = async () => (await a.call("GET", "/api/hotspots?lat=52.52&lng=13.405")).json.hotspots.map((h: any) => `${h.name}${h.verified ? "+" : ""}`).sort();
+
+  assert.deepEqual(await names(), ["Routed", "Venue Wi-Fi"], "no routers: listed on the host's word");
+  const { key } = (await a.call("POST", `/api/me/hotspots/${routed.id}/routers`, { as: "cid_l", body: {} })).json;
+  const bearer = { authorization: `Bearer ${key}` };
+  assert.deepEqual(await names(), ["Venue Wi-Fi"], "paired but not yet reporting");
+  await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "sharing" } });
+  assert.deepEqual(await names(), ["Routed+", "Venue Wi-Fi"], "a router confirms it: verified");
+  await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "daily limit reached" } });
+  assert.deepEqual(await names(), ["Venue Wi-Fi"], "the router stopped sharing");
+  await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "sharing" } });
+  a.tick(21 * 60_000);
+  assert.deepEqual(await names(), ["Venue Wi-Fi"], "the router went quiet");
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });

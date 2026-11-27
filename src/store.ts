@@ -45,6 +45,8 @@ export interface Router {
 }
 
 export const MAX_ROUTERS_PER_HOTSPOT = 10;
+/** Routers check in every 5 minutes; three missed check-ins and the hotspot leaves the public map. */
+export const ROUTER_LIVE_MS = 20 * 60_000;
 
 export interface Hotspot {
   id: string;
@@ -145,11 +147,29 @@ export function openStore(sql: Sql) {
         patch.name ?? cur.name, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
       return store.hotspot(hid, owner);
     },
-    /** Public discovery: active hotspots in the given geohash cells (prefix match). */
-    async nearby(cells: string[]): Promise<Hotspot[]> {
+    /**
+     * Public discovery: active hotspots in the given geohash cells (prefix match).
+     * A hotspot with paired routers is listed only while one of them has reported "sharing" within
+     * ROUTER_LIVE_MS, so a router that lost power or hit its limit drops off the map; those are
+     * marked verified. Hotspots without routers (venue Wi-Fi, phones) are listed on the host's word.
+     */
+    async nearby(cells: string[], now = Date.now()): Promise<(Hotspot & { verified: boolean })[]> {
       await init();
-      const out: Hotspot[] = [];
-      for (const c of cells) for (const r of await sql.all("SELECT * FROM hotspots WHERE active = 1 AND area LIKE ? LIMIT 200", `${c}%`)) out.push(toHotspot(r));
+      const out: (Hotspot & { verified: boolean })[] = [];
+      const seen = new Set<string>();
+      for (const c of cells) {
+        const rows = await sql.all(
+          `SELECT h.*, (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id) AS n_routers,
+                  (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id AND r.last_seen >= ? AND r.state = 'sharing') AS n_live
+             FROM hotspots h WHERE h.active = 1 AND h.area LIKE ? LIMIT 200`, now - ROUTER_LIVE_MS, `${c}%`);
+        for (const r of rows) {
+          if (seen.has(String(r.id))) continue;
+          seen.add(String(r.id));
+          const live = Number(r.n_live) > 0;
+          if (Number(r.n_routers) > 0 && !live) continue;
+          out.push({ ...toHotspot(r), verified: live });
+        }
+      }
       return out;
     },
 

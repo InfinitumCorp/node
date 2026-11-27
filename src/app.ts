@@ -169,7 +169,7 @@ export function createApp(opts: Options) {
         const la = Math.max(-90, Math.min(90, lat + dl)), lo = ((lng + dg + 540) % 360) - 180;
         cells.add(geohash(la, lo, 5));
       }
-      const hotspots = (await store.nearby([...cells])).map((h) => ({ ...h, distanceKm: Math.round(km(lat, lng, h.lat, h.lng) * 10) / 10 }))
+      const hotspots = (await store.nearby([...cells], now())).map((h) => ({ ...h, distanceKm: Math.round(km(lat, lng, h.lat, h.lng) * 10) / 10 }))
         .sort((a, b) => a.distanceKm - b.distanceKm);
       return json(200, { hotspots });
     }

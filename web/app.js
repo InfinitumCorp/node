@@ -64,7 +64,7 @@ async function renderFind() {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
         out.innerHTML = hotspots.length ? `<ul class="list">${hotspots.map((h) => `
-          <li><div><strong>${esc(h.name)}</strong><br><span class="muted">Network: ${esc(h.ssid)} · about ${h.distanceKm} km</span></div>
+          <li><div><strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="A Nøde router reported sharing in the last 20 minutes">live</span>` : ""}<br><span class="muted">Network: ${esc(h.ssid)} · about ${h.distanceKm} km</span></div>
           <div><span class="tag">${esc(h.kind)}</span><br><button data-measure="${esc(h.id)}">I'm on it</button></div></li>`).join("")}</ul>`
           : `<p class="muted">No Nøde hotspots here yet. Coverage grows place by place — <a href="#/host">host one</a>.</p>`;
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
