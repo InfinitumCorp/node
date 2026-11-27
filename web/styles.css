@@ -57,3 +57,15 @@ button.link[aria-current] { color: var(--muted); text-decoration: none; cursor: 
 .days li { display: grid; grid-template-columns: 7.5em 1fr 6em; gap: 8px; align-items: center; }
 .days meter { width: 100%; height: 10px; }
 .days li span:last-child { text-align: right; }
+a.button { display: inline-flex; align-items: center; font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); text-decoration: none; min-height: 44px; box-sizing: border-box; }
+.sign { text-align: center; background: #fff; color: #000; border: 2px solid #000; border-radius: 16px; padding: 32px 24px; margin: 16px auto; max-width: 560px; }
+.sign h1 { font-size: 32px; margin: 4px 0 16px; overflow-wrap: anywhere; }
+.sign-kicker { font-size: 28px; font-weight: 800; letter-spacing: .02em; margin: 0; }
+.sign-ssid { font-size: 40px; font-weight: 800; margin: 4px 0 16px; overflow-wrap: anywhere; }
+.sign .fine { color: #333; }
+.sign-qr .qr { width: 180px; height: 180px; margin: 12px auto; display: block; }
+@media print {
+  .top, .tabs, .foot, .no-print { display: none !important; }
+  body { background: #fff; }
+  .sign { border: 0; margin: 0 auto; max-width: none; }
+}

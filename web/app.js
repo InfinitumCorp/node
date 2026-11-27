@@ -1,5 +1,6 @@
 // Nøde web app. No framework; renders three views into <main> from the URL hash.
 import { LANGS, apiError, choose, lang, routerState, setup, t } from "./i18n.js";
+import qrcode from "./qrcode.vendor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
 const view = $("#view");
@@ -302,7 +303,7 @@ async function renderHost() {
     el.innerHTML = `<div class="row between"><div><strong>${esc(h.name)}</strong> <span class="tag">${esc(t(h.kind))}</span><br>
       <span class="muted">${h.active ? t("Sharing") : t("Stopped")} · ${esc(h.ssid)}</span></div>
       <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? t("Stop") : t("Start sharing")}</button></div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save limits")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}</div><div data-out class="fine"></div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save limits")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
       <div class="row start"><button type="button" data-pair>${t("Pair a router")}</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
@@ -345,11 +346,58 @@ async function renderHost() {
 }
 
 // ---------- routing ----------
-const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost };
+// ---------- Venue sign ----------
+// A printable notice for the hotspot's window or counter: the network to join and a QR code to Nøde.
+function qrSvg(text) {
+  const q = qrcode(0, "M");
+  q.addData(text);
+  q.make();
+  const n = q.getModuleCount(), pad = 4, ns = "http://www.w3.org/2000/svg";
+  let d = "";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (q.isDark(r, c)) d += `M${c + pad} ${r + pad}h1v1h-1z`;
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("viewBox", `0 0 ${n + 2 * pad} ${n + 2 * pad}`);
+  svg.setAttribute("class", "qr");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", t("QR code: {url}", { url: text }));
+  svg.setAttribute("shape-rendering", "crispEdges");
+  const bg = document.createElementNS(ns, "rect");
+  bg.setAttribute("width", "100%"); bg.setAttribute("height", "100%"); bg.setAttribute("fill", "#fff");
+  const p = document.createElementNS(ns, "path");
+  p.setAttribute("d", d); p.setAttribute("fill", "#000");
+  svg.append(bg, p);
+  return svg;
+}
+
+async function renderSign() {
+  const hid = (location.hash.match(/^#\/sign\/(hs_[A-Za-z0-9_-]+)/) || [])[1];
+  if (!me) { view.innerHTML = ""; view.append(signInCard()); return; }
+  const { hotspots } = await api("GET", "/api/me/hotspots");
+  const h = hotspots.find((x) => x.id === hid);
+  if (!h) { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/host">${t("Back to your hotspots")}</a></section>`; return; }
+  const url = `${location.origin}/`;
+  view.innerHTML = `
+    <section class="card no-print"><div class="row between"><a href="#/host">${t("Back to your hotspots")}</a><button class="primary" id="print">${t("Print")}</button></div>
+      <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p></section>
+    <article class="sign">
+      <p class="sign-kicker">${t("Free Wi-Fi")}</p>
+      <h1>${esc(h.name)}</h1>
+      <p>${t("Join the network")}</p>
+      <p class="sign-ssid">${esc(h.ssid)}</p>
+      <p>${t("No password. Guests are on their own network, kept apart from ours.")}</p>
+      <div class="sign-qr"></div>
+      <p class="fine">${t("Scan to find more free Wi-Fi and choose what you share:")} ${esc(url.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</p>
+    </article>`;
+  $(".sign-qr").append(qrSvg(url));
+  $("#print").addEventListener("click", () => window.print());
+}
+
+const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign };
 async function route() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1] || "find";
   const render = VIEWS[name] || renderFind;
-  document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === name ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
+  const tab = name === "sign" ? "host" : name;
+  document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   try { await render(); } catch (e) { view.innerHTML = `<section class="card"><p class="error">${esc(e.message)}</p></section>`; }
 }
 
