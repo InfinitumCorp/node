@@ -217,6 +217,33 @@ test("a hotspot with routers is on the map only while a router says it is sharin
   a.close();
 });
 
+test("a host sees what each router shared per day, newest first", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_d", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_d", body: { name: "Shop", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const base = `/api/me/hotspots/${h.id}/routers`;
+  const { key, router } = (await a.call("POST", base, { as: "cid_d", body: {} })).json;
+  const report = (usedMb: number) => a.call("POST", "/api/router/status", { headers: { authorization: `Bearer ${key}` }, body: { state: "sharing", usedMb } });
+  const days = async () => (await a.call("GET", base, { as: "cid_d" })).json.routers[0].days.map((d: any) => d.usedMb);
+
+  for (const mb of [10, 250, 400]) { await report(mb); a.tick(3_600_000); }
+  assert.deepEqual(await days(), [400], "one day so far");
+  await report(5); // the router's midnight: its count starts again
+  a.tick(3_600_000);
+  await report(90);
+  assert.deepEqual(await days(), [90, 400]);
+  a.tick(48 * 3_600_000);
+  await report(120); // two silent days, and a bigger number: still a new day
+  assert.deepEqual(await days(), [120, 90, 400]);
+  for (let i = 0; i < 8; i++) { await report(0); a.tick(3_600_000); await report(1); a.tick(23 * 3_600_000); }
+  assert.equal((await days()).length, 7, "a week at most");
+
+  await a.call("DELETE", `${base}/${router.id}`, { as: "cid_d" });
+  const left = await a.store.routers(h.id, "cid_d");
+  assert.equal(left.length, 0);
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });

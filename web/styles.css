@@ -52,3 +52,8 @@ input[type=text], input[type=number], select { width: 100%; font: inherit; paddi
 .langs { display: flex; gap: 12px; }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
 button.link[aria-current] { color: var(--muted); text-decoration: none; cursor: default; }
+.warn { color: var(--warn); margin: 4px 0 8px; }
+.days { list-style: none; margin: 4px 0 12px; padding: 0; display: grid; gap: 2px; }
+.days li { display: grid; grid-template-columns: 7.5em 1fr 6em; gap: 8px; align-items: center; }
+.days meter { width: 100%; height: 10px; }
+.days li span:last-child { text-align: right; }

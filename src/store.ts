@@ -42,6 +42,8 @@ export interface Router {
   tempC: number | null;
   /** Guest data today, MB. The host's own figure; never per guest. */
   usedMb: number | null;
+  /** Up to the last 7 router-days, newest first: when the day's last report came and the MB shared. */
+  days?: { endedAt: number; usedMb: number }[];
 }
 
 export const MAX_ROUTERS_PER_HOTSPOT = 10;
@@ -114,6 +116,7 @@ export function openStore(sql: Sql) {
     async forget(cid: string) {
       await init();
       await sql.run("DELETE FROM consent_ledger WHERE cid = ?", cid);
+      await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE owner = ?)", cid);
       await sql.run("DELETE FROM routers WHERE owner = ?", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
@@ -187,12 +190,18 @@ export function openStore(sql: Sql) {
     },
     async routers(hotspot: string, owner: string): Promise<Router[]> {
       await init();
-      return (await sql.all("SELECT * FROM routers WHERE hotspot = ? AND owner = ? ORDER BY created_at", hotspot, owner)).map(toRouter);
+      const list = (await sql.all("SELECT * FROM routers WHERE hotspot = ? AND owner = ? ORDER BY created_at", hotspot, owner)).map(toRouter);
+      for (const r of list) {
+        r.days = (await sql.all("SELECT last_at, used_mb FROM router_days WHERE router = ? ORDER BY started_at DESC LIMIT 7", r.id))
+          .map((d) => ({ endedAt: Number(d.last_at), usedMb: Number(d.used_mb) }));
+      }
+      return list;
     },
     async removeRouter(rid: string, hotspot: string, owner: string): Promise<boolean> {
       await init();
       const r = await sql.get("SELECT id FROM routers WHERE id = ? AND hotspot = ? AND owner = ?", rid, hotspot, owner);
       if (!r) return false;
+      await sql.run("DELETE FROM router_days WHERE router = ?", rid);
       await sql.run("DELETE FROM routers WHERE id = ?", rid);
       return true;
     },
@@ -210,6 +219,16 @@ export function openStore(sql: Sql) {
       if (!report) return void (await sql.run("UPDATE routers SET last_seen = ? WHERE id = ?", now, rid));
       await sql.run("UPDATE routers SET last_seen = ?, state = ?, temp_c = ?, used_mb = ? WHERE id = ?",
         now, report.state ?? null, report.tempC ?? null, report.usedMb ?? null, rid);
+      if (report.usedMb == null) return;
+      // The router counts guest MB since its own midnight. A smaller figure, or a long silence, starts a new day.
+      const open = await sql.get<{ started_at: number; last_at: number; used_mb: number }>(
+        "SELECT started_at, last_at, used_mb FROM router_days WHERE router = ? ORDER BY started_at DESC LIMIT 1", rid);
+      if (open && report.usedMb >= Number(open.used_mb) && now - Number(open.last_at) < 36 * 3_600_000) {
+        await sql.run("UPDATE router_days SET last_at = ?, used_mb = ? WHERE router = ? AND started_at = ?", now, report.usedMb, rid, open.started_at);
+      } else {
+        await sql.run("INSERT INTO router_days (router, started_at, last_at, used_mb) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING", rid, now, now, report.usedMb);
+        await sql.run("DELETE FROM router_days WHERE router = ? AND started_at < ?", rid, now - 35 * 86_400_000);
+      }
     },
 
     // ---- analytics (anonymous) ----

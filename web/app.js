@@ -180,6 +180,9 @@ async function batteryNote() {
   } catch { return ""; }
 }
 
+// Matches ROUTER_LIVE_MS in src/store.ts: four missed 5-minute check-ins.
+const ROUTER_LIVE_MS = 20 * 60_000;
+
 const ago = (ts) => {
   const m = Math.round((Date.now() - ts) / 60000);
   return m < 1 ? t("just now") : m < 60 ? t("{n} min ago", { n: m }) : m < 2880 ? t("{n} h ago", { n: Math.round(m / 60) }) : t("{n} days ago", { n: Math.round(m / 1440) });
@@ -205,6 +208,30 @@ function wireRouters(el, h) {
           load();
         });
         list.append(row);
+        // While the hotspot is on, say why this router isn't putting it on the map.
+        if (h.active) {
+          const quiet = r.lastSeen ? Date.now() - r.lastSeen > ROUTER_LIVE_MS : Date.now() - r.createdAt > ROUTER_LIVE_MS;
+          const why = quiet
+            ? (r.lastSeen ? t("Last heard from {ago}, so the hotspot is off the map. Check the router's power and internet.", { ago: ago(r.lastSeen) })
+              : t("It hasn't checked in since it was paired. Run the command shown when you paired it, or unpair and pair again."))
+            : r.state && r.state !== "sharing" ? t("Not on the map right now: {state}.", { state: routerState(r.state) }) : "";
+          if (why) list.append(Object.assign(document.createElement("p"), { className: "warn", textContent: why }));
+        }
+        if (r.days?.length) {
+          const max = Math.max(1, ...r.days.map((d) => d.usedMb));
+          const days = document.createElement("ul");
+          days.className = "days";
+          days.setAttribute("aria-label", t("Guest data by day"));
+          for (const d of r.days) {
+            const li = document.createElement("li");
+            li.innerHTML = `<span>${esc(new Date(d.endedAt).toLocaleDateString(lang, { weekday: "short", day: "numeric", month: "short" }))}</span><meter min="0"></meter><span>${esc(t("{n} MB", { n: d.usedMb.toLocaleString(lang) }))}</span>`;
+            const m = li.querySelector("meter");
+            m.max = max;
+            m.value = d.usedMb;
+            days.append(li);
+          }
+          list.append(days);
+        }
       }
     } catch (e) { list.textContent = e.message; }
   }

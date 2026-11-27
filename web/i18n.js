@@ -106,6 +106,11 @@ const RU = {
   "Nøde routers": "Роутеры Nøde",
   "Loading…": "Загрузка…",
   "Pair a router": "Привязать роутер",
+  "Last heard from {ago}, so the hotspot is off the map. Check the router's power and internet.": "Последний раз на связи {ago}, поэтому точки нет на карте. Проверьте питание и интернет роутера.",
+  "It hasn't checked in since it was paired. Run the command shown when you paired it, or unpair and pair again.": "Роутер не выходил на связь после привязки. Выполните команду, показанную при привязке, или отвяжите и привяжите снова.",
+  "Not on the map right now: {state}.": "Сейчас не на карте: {state}.",
+  "Guest data by day": "Трафик гостей по дням",
+  "{n} MB": "{n} МБ",
   // states a router reports (firmware/openwrt/nod-limits.sh)
   "sharing": "раздаёт",
   "stopped by host": "остановлен владельцем",
