@@ -21,5 +21,10 @@
     // Where they go when they arrive through the Russian mirror (mirror/), which marks its requests.
     "CID_MIRROR_ISSUER": "https://ru.id.cumuluscloud.app"
   },
+  // Anonymous telemetry: 20 a minute per address, 300 a minute per hotspot (namespace ids are per account).
+  "ratelimits": [
+    { "name": "TELEMETRY_IP", "namespace_id": "4101", "simple": { "limit": 20, "period": 60 } },
+    { "name": "TELEMETRY_HOTSPOT", "namespace_id": "4102", "simple": { "limit": 300, "period": 60 } }
+  ],
   "observability": { "enabled": true }
 }

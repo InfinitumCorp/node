@@ -33,7 +33,16 @@ export interface Options {
   verify?: CidVerifier;
   env?: Record<string, unknown>;
   now?: () => number;
+  /**
+   * Rate limits for anonymous telemetry: return false to refuse. On Workers these are rate-limiting
+   * bindings (wrangler.jsonc); counts are kept by Cloudflare per key and nothing is stored here.
+   *   ip      per client address (not applied through the Russian mirror, which hides addresses)
+   *   hotspot per hotspot, so nobody can flood one venue's report
+   */
+  limits?: { ip?: Limiter; hotspot?: Limiter };
 }
+
+export type Limiter = (key: string) => Promise<boolean>;
 
 export const CSP = [
   "default-src 'self'",
@@ -178,6 +187,14 @@ export function createApp(opts: Options) {
       const b = await body(req);
       const hotspot = text(b.hotspot, 64, "hotspot");
       const session = text(b.session, 128, "session");
+      const ip = req.headers.get("x-node-mirror") ? "" : req.headers.get("cf-connecting-ip") ?? "";
+      const allowed = (await Promise.all([
+        ip && opts.limits?.ip ? opts.limits.ip(`ip:${ip}`) : true,
+        opts.limits?.hotspot ? opts.limits.hotspot(`hs:${hotspot}`) : true,
+      ])).every(Boolean);
+      if (!allowed) return new Response(JSON.stringify({ error: "Too many measurements. Try again in a minute." }), {
+        status: 429, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "retry-after": "60" },
+      });
       let ok: boolean;
       if (b.kind === "quality") {
         ok = await store.addQualitySample({
