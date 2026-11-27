@@ -11,6 +11,8 @@
 #  - SQM caps on guest traffic from /etc/config/node (max_mbps), so the host's own use comes first.
 #  - A daily data cap and schedule are enforced by nod-limits.sh (installed to cron).
 #
+#  - Paired routers fetch newer, checksum-verified Nøde scripts about once a day (nod-update.sh;
+#    uci set node.settings.autoupdate=0 turns that off).
 #  - Paired with the app (NODE_KEY=nr_... from Host > Pair a router), nod-sync.sh follows the app's
 #    start/stop switch and limits and reports back. Needs curl for that (opkg install curl).
 #
@@ -151,6 +153,7 @@ fi
 uci commit
 cp "$(dirname "$0")/nod-limits.sh" /usr/sbin/nod-limits && chmod 755 /usr/sbin/nod-limits
 cp "$(dirname "$0")/nod-sync.sh" /usr/sbin/nod-sync && chmod 755 /usr/sbin/nod-sync
+[ ! -f "$(dirname "$0")/nod-update.sh" ] || { cp "$(dirname "$0")/nod-update.sh" /usr/sbin/nod-update && chmod 755 /usr/sbin/nod-update; }
 # nod-sync fetches the app's settings when the router is paired, then runs nod-limits either way.
 touch /etc/crontabs/root
 sed -i '/nod-limits\|nod-sync/d' /etc/crontabs/root
