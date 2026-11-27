@@ -89,3 +89,11 @@ if [ -f "$STATE" ]; then
   curl -fsS --max-time 20 -H @"$hdr" -H 'content-type: application/json' -d "$body" "$api/api/router/status" >/dev/null 2>&1 \
     || logger -t node "sync: couldn't report status"
 fi
+
+# About once a day (and after each reboot, since /tmp is cleared), pick up newer Nøde scripts.
+UPDATE="${NOD_UPDATE:-/usr/sbin/nod-update}"
+stamp=/tmp/node-updated
+if [ -x "$UPDATE" ] && [ "$(cat "$stamp" 2>/dev/null)" != "$(date +%Y-%m-%d)" ]; then
+  date +%Y-%m-%d > "$stamp"
+  NODE_API="$api" "$UPDATE" || true
+fi
