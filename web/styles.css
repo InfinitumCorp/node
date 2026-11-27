@@ -49,3 +49,6 @@ input[type=text], input[type=number], select { width: 100%; font: inherit; paddi
 .tag { white-space: nowrap; flex: none; align-self: flex-start; }
 .cmd { white-space: pre-wrap; word-break: break-all; font-family: ui-monospace, monospace; font-size: 13px; background: var(--bg, transparent); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 8px 0; }
 .tag.ok { color: var(--accent); border-color: currentColor; }
+.langs { display: flex; gap: 12px; }
+button.link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; }
+button.link[aria-current] { color: var(--muted); text-decoration: none; cursor: default; }
