@@ -6,11 +6,12 @@
   "type": "module",
   "engines": { "node": ">=24" },
   "scripts": {
+    "sync-firmware": "node scripts/sync-firmware.mjs",
     "start": "node src/server.ts",
     "dev": "node --watch src/server.ts",
     "add-buyer": "node scripts/add-buyer.ts",
     "deploy": "npx -y wrangler@4 deploy",
-    "test": "node --test test/"
+    "test": "node --test --test-force-exit test/*.test.ts mirror/*.test.mjs"
   },
   "license": "UNLICENSED"
 }

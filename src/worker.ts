@@ -10,7 +10,12 @@ interface Env {
   ASSETS: { fetch(req: Request): Promise<Response> };
   CID_ISSUER?: string;
   CID_PUBLIC_ISSUER?: string;
+  TELEMETRY_IP?: RateLimit;
+  TELEMETRY_HOTSPOT?: RateLimit;
 }
+
+interface RateLimit { limit(o: { key: string }): Promise<{ success: boolean }> }
+const limiter = (rl?: RateLimit) => rl && (async (key: string) => (await rl.limit({ key })).success);
 
 let cached: { db: D1Like; store: Store; handle: ReturnType<typeof createApp> } | null = null;
 
@@ -18,7 +23,10 @@ export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     if (!cached || cached.db !== env.DB) {
       const store = openStore(d1(env.DB));
-      cached = { db: env.DB, store, handle: createApp({ store, env: env as unknown as Record<string, unknown> }) };
+      cached = { db: env.DB, store, handle: createApp({
+        store, env: env as unknown as Record<string, unknown>,
+        limits: { ip: limiter(env.TELEMETRY_IP), hotspot: limiter(env.TELEMETRY_HOTSPOT) },
+      }) };
     }
     const r = await cached.handle(req);
     return r ?? env.ASSETS.fetch(req);

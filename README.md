@@ -18,7 +18,8 @@ Free community Wi-Fi: fixed gateways at venues and homes, extended by Nøde rout
 | `src/cid.ts` | Cumulus ID token verification (copied from `architect`) |
 | `web/` | The Nøde web app (installable PWA): find Wi-Fi, your data choices, host controls |
 | `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps, schedule and daily limit |
-| `docs/` | [Data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
+| `web/openapi.json` | OpenAPI 3.1 description of the API (served at `/openapi.json`; a test checks it covers every route) |
+| `docs/` | [Hosting guide](docs/HOSTING.md) ([по-русски](docs/HOSTING.ru.md)), [data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
 
 ## Run it
 
@@ -65,6 +66,16 @@ The CSP is set in two places that must match: `src/app.ts` (API and local server
 **Data.** Analytics rows carry a rotating anonymous session id, a ~5 km area and an hour — never an account id. Reports drop any group under 10 sessions and round counts to 5. Free access never depends on an optional purpose; see [docs/LEGAL.md](docs/LEGAL.md).
 
 **Analytics.** Amplitude Browser SDK 2.49.2, vendored, US region, page views and sessions only; everything else off. CSP adds only `api2.amplitude.com` and `api.amplitude.com` to `connect-src`.
+
+## Install on a router
+
+On an OpenWrt 23.05+ router (`ssh root@192.168.1.1`), one command downloads the scripts, checks them against `SHA256SUMS`, installs curl if needed and runs the setup:
+
+```sh
+wget -qO /tmp/nod-install.sh https://node.infinitumcorporation.ai/firmware/openwrt/nod-install.sh && ROLE=home NODE_KEY='nr_...' sh /tmp/nod-install.sh
+```
+
+To remove Nøde from a router: `nod-uninstall.sh` (same place). In Russia use `https://node-ru.infinitumcorporation.ai` in both places (`NODE_API=https://node-ru.infinitumcorporation.ai`); the router then talks to the mirror. The site serves copies of `firmware/openwrt/` from `web/firmware/openwrt/`: after editing a script run `node scripts/sync-firmware.mjs` (a test fails if the copies are stale).
 
 ## Router sync
 
