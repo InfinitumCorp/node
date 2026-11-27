@@ -10,7 +10,7 @@
     "dev": "node --watch src/server.ts",
     "add-buyer": "node scripts/add-buyer.ts",
     "deploy": "npx -y wrangler@4 deploy",
-    "test": "node --test test/"
+    "test": "node --test --test-force-exit test/*.test.ts mirror/*.test.mjs"
   },
   "license": "UNLICENSED"
 }
