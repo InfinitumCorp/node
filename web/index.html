@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Nøde — free community Wi-Fi</title>
-  <meta name="description" content="Free Wi-Fi from neighbours, venues and Nøde routers. You choose what you share.">
+  <meta name="description" data-i18n-attr="content" content="Free Wi-Fi from neighbours, venues and Nøde routers. You choose what you share.">
   <meta name="theme-color" content="#0b0f14">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
@@ -15,32 +15,33 @@
 </head>
 <body>
   <header class="top">
-    <a class="brand" href="#/find" aria-label="Nøde home"><span class="mark" aria-hidden="true">ø</span> Nøde</a>
+    <a class="brand" href="#/find" aria-label="Nøde home" data-i18n-attr="aria-label"><span class="mark" aria-hidden="true">ø</span> Nøde</a>
     <div data-cumulus-bar></div>
   </header>
 
-  <nav class="tabs" aria-label="Sections">
-    <a href="#/find" data-tab="find">Find Wi-Fi</a>
-    <a href="#/privacy" data-tab="privacy">Your data</a>
-    <a href="#/host" data-tab="host">Host</a>
+  <nav class="tabs" aria-label="Sections" data-i18n-attr="aria-label">
+    <a href="#/find" data-tab="find" data-i18n>Find Wi-Fi</a>
+    <a href="#/privacy" data-tab="privacy" data-i18n>Your data</a>
+    <a href="#/host" data-tab="host" data-i18n>Host</a>
   </nav>
 
   <main id="view" tabindex="-1"></main>
 
   <template id="signin">
     <section class="card center">
-      <h2>Sign in to continue</h2>
-      <p>Nøde uses your Cumulus ID. No separate password.</p>
+      <h2 data-i18n>Sign in to continue</h2>
+      <p data-i18n>Nøde uses your Cumulus ID. No separate password.</p>
       <div class="row">
-        <button class="primary" data-action="signin">Sign in with Cumulus ID</button>
-        <button data-action="create">Create a Cumulus ID</button>
+        <button class="primary" data-action="signin" data-i18n>Sign in with Cumulus ID</button>
+        <button data-action="create" data-i18n>Create a Cumulus ID</button>
       </div>
-      <p class="fine">Creating one brings you straight back here, signed in.</p>
+      <p class="fine" data-i18n>Creating one brings you straight back here, signed in.</p>
     </section>
   </template>
 
   <footer class="foot">
-    <p>Free basic access. Nothing optional is ever required to get online. <a href="#/privacy">What we collect</a></p>
+    <p><span data-i18n>Free basic access. Nothing optional is ever required to get online.</span> <a href="#/privacy" data-i18n>What we collect</a></p>
+    <p class="langs" id="langs"></p>
   </footer>
 </body>
 </html>
