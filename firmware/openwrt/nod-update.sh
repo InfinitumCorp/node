@@ -22,7 +22,7 @@ trap 'rm -rf "$dir"' EXIT
 curl -fsS --max-time 30 -o "$dir/SHA256SUMS" "$base/SHA256SUMS" 2>/dev/null || { log "couldn't reach $base"; exit 0; }
 
 changed=0
-for pair in nod-limits.sh:nod-limits nod-sync.sh:nod-sync nod-update.sh:nod-update; do
+for pair in nod-limits.sh:nod-limits nod-sync.sh:nod-sync nod-update.sh:nod-update nod-status.sh:nod-status; do
   src="${pair%%:*}"; dst="$BIN/${pair#*:}"
   want="$(tr -d '\r' < "$dir/SHA256SUMS" | sed -n "s/^\([0-9a-f]\{64\}\) [ *]$src\$/\1/p")"
   [ -n "$want" ] || continue

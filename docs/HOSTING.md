@@ -54,6 +54,8 @@ Every 5 minutes: its state ("sharing", "stopped by host", "outside sharing hours
 
 ## Troubleshooting
 
+On the router, `nod-status` shows the settings, the last check and recent log lines. It never prints the router key, so it's safe to send to support.
+
 | What you see | What to do |
 |---|---|
 | "Hasn't checked in yet" | The key or the address is wrong, or curl is missing. On the router: `logread -e node`. Re-pair and run `uci set node.settings.key='nr_...'; uci commit node; nod-sync`. |

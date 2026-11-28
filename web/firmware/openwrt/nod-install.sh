@@ -25,7 +25,7 @@ fetch() { # fetch <url> <file>
 
 echo "Downloading Nøde router scripts from $base"
 fetch "$base/SHA256SUMS" "$dir/SHA256SUMS"
-for f in nod-setup.sh nod-limits.sh nod-sync.sh nod-update.sh; do
+for f in nod-setup.sh nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh; do
   fetch "$base/$f" "$dir/$f"
   want="$(tr -d '\r' < "$dir/SHA256SUMS" | sed -n "s/^\([0-9a-f]\{64\}\) [ *]$f\$/\1/p")"
   got="$(sha256sum "$dir/$f" | cut -d' ' -f1)"

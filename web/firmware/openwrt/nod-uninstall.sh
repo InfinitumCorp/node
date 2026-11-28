@@ -21,7 +21,7 @@ if [ -f /etc/crontabs/root ]; then
   sed -i '/nod-limits\|nod-sync/d' /etc/crontabs/root
   /etc/init.d/cron restart >/dev/null 2>&1 || true
 fi
-rm -f /usr/sbin/nod-limits /usr/sbin/nod-sync /usr/sbin/nod-update /etc/config/node /tmp/node-state /tmp/node-usage
+rm -f /usr/sbin/nod-limits /usr/sbin/nod-sync /usr/sbin/nod-update /usr/sbin/nod-status /etc/config/node /tmp/node-state /tmp/node-usage
 
 wifi reload >/dev/null 2>&1 || true
 /etc/init.d/network reload >/dev/null 2>&1 || true

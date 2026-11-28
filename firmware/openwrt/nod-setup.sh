@@ -160,7 +160,9 @@ fi
 uci commit
 cp "$(dirname "$0")/nod-limits.sh" /usr/sbin/nod-limits && chmod 755 /usr/sbin/nod-limits
 cp "$(dirname "$0")/nod-sync.sh" /usr/sbin/nod-sync && chmod 755 /usr/sbin/nod-sync
-[ ! -f "$(dirname "$0")/nod-update.sh" ] || { cp "$(dirname "$0")/nod-update.sh" /usr/sbin/nod-update && chmod 755 /usr/sbin/nod-update; }
+for extra in nod-update nod-status; do
+  [ ! -f "$(dirname "$0")/$extra.sh" ] || { cp "$(dirname "$0")/$extra.sh" "/usr/sbin/$extra" && chmod 755 "/usr/sbin/$extra"; }
+done
 # nod-sync fetches the app's settings when the router is paired, then runs nod-limits either way.
 touch /etc/crontabs/root
 sed -i '/nod-limits\|nod-sync/d' /etc/crontabs/root
@@ -169,5 +171,5 @@ echo '*/5 * * * * /usr/sbin/nod-sync' >> /etc/crontabs/root
 /etc/init.d/network reload
 /etc/init.d/firewall reload
 [ -x /etc/init.d/sqm ] && /etc/init.d/sqm reload || true
-if [ -n "$NODE_KEY" ]; then echo "Nøde $ROLE configured and paired. Start sharing from the app; the router follows within 5 minutes."
+if [ -n "$NODE_KEY" ]; then echo "Nøde $ROLE configured and paired. Check it any time with: nod-status. Start sharing from the app; the router follows within 5 minutes."
 else echo "Nøde $ROLE configured. Sharing is OFF. Pair it in the app (Host > Pair a router), or start it by hand: uci set node.settings.active=1; uci commit node; nod-limits"; fi
