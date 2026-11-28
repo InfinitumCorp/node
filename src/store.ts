@@ -1,5 +1,5 @@
 import type { LedgerEntry, Purpose } from "./consent.ts";
-import { geohash, geohashCenter, hourOf, percentile, roundCount, suppress } from "./privacy.ts";
+import { MIN_GROUP, geohash, geohashCenter, hourOf, percentile, roundCount, suppress } from "./privacy.ts";
 import { SCHEMA, type Sql } from "./sql.ts";
 
 /**
@@ -59,6 +59,8 @@ export interface Hotspot {
   lat: number;
   lng: number;
   active: boolean;
+  /** While set and in the future, the hotspot is paused: not on the map and its routers stop sharing. */
+  pausedUntil: number | null;
   limits: HostLimits;
   owner?: string;
   updatedAt: number;
@@ -74,6 +76,10 @@ export async function sha256(s: string): Promise<string> {
 
 type Row = Record<string, unknown>;
 
+/** What a guest can report about a hotspot. */
+export const PROBLEMS = ["no_internet", "not_found", "asks_password", "slow"] as const;
+export type Problem = (typeof PROBLEMS)[number];
+
 export function openStore(sql: Sql) {
   let ready: Promise<void> | null = null;
   const init = () => (ready ??= sql.batch(SCHEMA).catch((e) => { ready = null; throw e; }));
@@ -82,7 +88,7 @@ export function openStore(sql: Sql) {
     const c = geohashCenter(String(r.area));
     return {
       id: String(r.id), name: String(r.name), kind: r.kind as HotspotKind, ssid: String(r.ssid), area: String(r.area),
-      lat: c.lat, lng: c.lng, active: Boolean(r.active), limits: JSON.parse(String(r.limits)) as HostLimits,
+      lat: c.lat, lng: c.lng, active: Boolean(r.active), pausedUntil: r.paused_until == null ? null : Number(r.paused_until), limits: JSON.parse(String(r.limits)) as HostLimits,
       updatedAt: Number(r.updated_at), ...(withOwner ? { owner: String(r.owner) } : {}),
     };
   };
@@ -118,8 +124,41 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM consent_ledger WHERE cid = ?", cid);
       await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE owner = ?)", cid);
       await sql.run("DELETE FROM routers WHERE owner = ?", cid);
+      await sql.run("DELETE FROM hotspot_pauses WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
+      await sql.run("DELETE FROM problem_reports WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
+    },
+
+    /**
+     * Removes one hotspot and everything tied to it: routers (their keys stop working), router history,
+     * pauses and problem reports. Anonymous speed samples stay, as they do when an account is erased.
+     */
+    async removeHotspot(hid: string, owner: string) {
+      await init();
+      if (!(await sql.get("SELECT 1 AS x FROM hotspots WHERE id = ? AND owner = ?", hid, owner))) return false;
+      await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE hotspot = ?)", hid);
+      await sql.run("DELETE FROM routers WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM hotspot_pauses WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM problem_reports WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM venue_sessions WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM hotspots WHERE id = ?", hid);
+      return true;
+    },
+
+    /** Everything Nøde holds about a person, for "Download my data". Router keys are never stored, so never included. */
+    async export(cid: string) {
+      await init();
+      const account = await sql.get("SELECT cid, jurisdiction, created_at FROM accounts WHERE cid = ?", cid);
+      const hotspots = await store.myHotspots(cid);
+      const routers = [];
+      for (const h of hotspots) routers.push(...await store.routers(h.id, cid));
+      return {
+        account: account ? { cid: String(account.cid), jurisdiction: String(account.jurisdiction), createdAt: Number(account.created_at) } : null,
+        consentLedger: await store.ledger(cid),
+        hotspots, routers,
+        note: "Anonymous measurements (network quality, venue visits) are never linked to an account, so there are none to include.",
+      };
     },
 
     // ---- hotspots ----
@@ -134,20 +173,24 @@ export function openStore(sql: Sql) {
     },
     async hotspot(hid: string, owner?: string): Promise<Hotspot | null> {
       await init();
-      const r = await sql.get("SELECT * FROM hotspots WHERE id = ?", hid);
+      const r = await sql.get(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id WHERE h.id = ?`, hid);
       if (!r || (owner && r.owner !== owner)) return null;
       return toHotspot(r, Boolean(owner));
     },
     async myHotspots(owner: string): Promise<Hotspot[]> {
       await init();
-      return (await sql.all("SELECT * FROM hotspots WHERE owner = ? ORDER BY updated_at DESC", owner)).map((r) => toHotspot(r, true));
+      return (await sql.all(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id
+        WHERE h.owner = ? ORDER BY h.updated_at DESC`, owner)).map((r) => toHotspot(r, true));
     },
-    async updateHotspot(hid: string, owner: string, patch: { name?: string; active?: boolean; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot | null> {
+    async updateHotspot(hid: string, owner: string, patch: { name?: string; ssid?: string; active?: boolean; pausedUntil?: number | null; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot | null> {
       const cur = await store.hotspot(hid, owner);
       if (!cur) return null;
       const limits = { ...cur.limits, ...patch.limits, guestIsolation: true as const };
-      await sql.run("UPDATE hotspots SET name = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?",
-        patch.name ?? cur.name, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
+      await sql.run("UPDATE hotspots SET name = ?, ssid = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?",
+        patch.name ?? cur.name, patch.ssid ?? cur.ssid, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
+      // Starting or stopping by hand ends a pause; a new pause replaces the old one.
+      if (patch.pausedUntil !== undefined || patch.active !== undefined) await sql.run("DELETE FROM hotspot_pauses WHERE hotspot = ?", hid);
+      if (patch.pausedUntil != null && patch.pausedUntil > now) await sql.run("INSERT INTO hotspot_pauses (hotspot, until) VALUES (?, ?)", hid, patch.pausedUntil);
       return store.hotspot(hid, owner);
     },
     /**
@@ -164,7 +207,8 @@ export function openStore(sql: Sql) {
         const rows = await sql.all(
           `SELECT h.*, (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id) AS n_routers,
                   (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id AND r.last_seen >= ? AND r.state = 'sharing') AS n_live
-             FROM hotspots h WHERE h.active = 1 AND h.area LIKE ? LIMIT 200`, now - ROUTER_LIVE_MS, `${c}%`);
+             FROM hotspots h WHERE h.active = 1 AND h.area LIKE ?
+              AND NOT EXISTS (SELECT 1 FROM hotspot_pauses p WHERE p.hotspot = h.id AND p.until > ?) LIMIT 200`, now - ROUTER_LIVE_MS, `${c}%`, now);
         for (const r of rows) {
           if (seen.has(String(r.id))) continue;
           seen.add(String(r.id));
@@ -248,6 +292,29 @@ export function openStore(sql: Sql) {
       return true;
     },
 
+    /**
+     * A guest says something is wrong at a hotspot. Only a per-day count per reason is kept:
+     * no session, address or account, so a report can't be traced to anyone.
+     */
+    async addProblem(hotspot: string, reason: Problem, now = Date.now()) {
+      await init();
+      if (!(await sql.get("SELECT 1 AS x FROM hotspots WHERE id = ?", hotspot))) return false;
+      const day = now - (now % 86_400_000);
+      await sql.run("INSERT INTO problem_reports (hotspot, day, reason, n) VALUES (?, ?, ?, 1) ON CONFLICT (hotspot, day, reason) DO UPDATE SET n = n + 1", hotspot, day, reason);
+      await sql.run("DELETE FROM problem_reports WHERE day < ?", day - 35 * 86_400_000);
+      return true;
+    },
+
+    /** Problem reports at a hotspot since `from`, counted per reason. */
+    async hotspotProblems(hotspot: string, from: number) {
+      await init();
+      const rows = await sql.all("SELECT reason, SUM(n) AS n FROM problem_reports WHERE hotspot = ? AND day >= ? GROUP BY reason", hotspot, from - (from % 86_400_000));
+      const out: Record<string, number> = {};
+      for (const p of PROBLEMS) out[p] = 0;
+      for (const r of rows) if (String(r.reason) in out) out[String(r.reason)] = Number(r.n);
+      return out as Record<Problem, number>;
+    },
+
     // ---- buyers and reports ----
     async addBuyer(name: string, products: string[], license: string, now = Date.now()) {
       await init();
@@ -287,6 +354,24 @@ export function openStore(sql: Sql) {
       }));
       const { rows: kept, suppressed } = suppress(all);
       return { rows: kept.map(({ key: _k, sessions, ...r }) => ({ ...r, sessions: roundCount(sessions) })), suppressed };
+    },
+
+    /**
+     * A host's view of their own hotspot: guests' measured speed over a period, as one group.
+     * Under MIN_GROUP sessions nothing is shown, the same rule as the licensed reports.
+     */
+    async hotspotQuality(hotspot: string, from: number, to: number) {
+      await init();
+      const rows = await sql.all("SELECT session, down_mbps, latency_ms, ok FROM quality_samples WHERE hotspot = ? AND hour >= ? AND hour <= ?", hotspot, hourOf(from), to);
+      const sessions = new Set(rows.map((r) => String(r.session))).size;
+      if (sessions < MIN_GROUP) return { enough: false as const, minSessions: MIN_GROUP };
+      const down = rows.filter((r) => r.down_mbps != null).map((r) => Number(r.down_mbps));
+      const lat = rows.filter((r) => r.latency_ms != null).map((r) => Number(r.latency_ms));
+      const ok = rows.reduce((n, r) => n + Number(r.ok), 0);
+      return {
+        enough: true as const, sessions: roundCount(sessions),
+        medianDownMbps: percentile(down, 50), p90LatencyMs: percentile(lat, 90), successRate: Math.round((ok / rows.length) * 1000) / 1000,
+      };
     },
 
     async venueReport(hotspot: string, from: number, to: number) {

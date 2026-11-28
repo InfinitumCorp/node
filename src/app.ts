@@ -1,7 +1,7 @@
 import { CidUnavailable, cidIssuer, createCidVerifier, presentedToken, type CidVerifier } from "./cid.ts";
 import { JURISDICTIONS, POLICY_VERSION, PURPOSES, currentConsent, isPurpose, jurisdiction } from "./consent.ts";
 import { AREA, geohash } from "./privacy.ts";
-import { HOTSPOT_KINDS, type HostLimits, type HotspotKind, type Store } from "./store.ts";
+import { HOTSPOT_KINDS, PROBLEMS, type HostLimits, type HotspotKind, type Problem, type Store } from "./store.ts";
 
 /**
  * Nøde API, on standard Request/Response so it runs on Cloudflare Workers and on Node.
@@ -13,17 +13,21 @@ import { HOTSPOT_KINDS, type HostLimits, type HotspotKind, type Store } from "./
  *   GET  /api/hotspots?lat&lng            active hotspots around a point (public)
  *   GET  /api/me                          (CID) account, consent state
  *   PUT  /api/me/consent                  (CID) { jurisdiction?, choices: { purpose: boolean } }
+ *   GET  /api/me/export                   (CID) everything Nøde holds about me, as a JSON download
  *   DELETE /api/me                        (CID) erase account, ledger and hotspots
  *   GET  /api/me/hotspots                 (CID) my hotspots
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
- *   PATCH /api/me/hotspots/:id            (CID) name, active (the stop button), limits
+ *   PATCH /api/me/hotspots/:id            (CID) name, ssid, active (the stop button), pausedUntil, limits
+ *   DELETE /api/me/hotspots/:id           (CID) remove a hotspot, its routers and their history
  *   GET  /api/me/hotspots/:id/activity    (CID) the venue's own busy-hours report
+ *   GET  /api/me/hotspots/:id/quality     (CID) guests' measured speed over 7 days, hidden under 10 sessions
+ *   GET  /api/me/hotspots/:id/problems    (CID) guests' problem reports over 7 days, counted per reason
  *   GET  /api/me/hotspots/:id/routers     (CID) paired Nøde routers and what they last reported
  *   POST /api/me/hotspots/:id/routers     (CID) { name? } pair a router; the key is shown once
  *   DELETE /api/me/hotspots/:id/routers/:rid  (CID) unpair; the key stops working at once
  *   GET  /api/router/config               (router key) the hotspot's switch and limits, for nod-sync
  *   POST /api/router/status               (router key) { state, tempC?, usedMb? }
- *   POST /api/telemetry                  anonymous: { hotspot, session, kind: "quality"|"visit", ... }
+ *   POST /api/telemetry                  anonymous: { hotspot, session, kind: "quality"|"visit"|"problem", ... }
  *   GET  /api/reports/connectivity?area&from&to       (buyer key) aggregated, small groups suppressed
  *   GET  /api/reports/venue-activity?hotspot&from&to  (buyer key)
  */
@@ -223,7 +227,11 @@ export function createApp(opts: Options) {
         }, now());
       } else if (b.kind === "visit") {
         ok = await store.addVenueSession(hotspot, session, now());
-      } else throw new HttpError(400, "kind must be quality or visit.");
+      } else if (b.kind === "problem") {
+        // Reported by the guest on purpose, so no consent purpose applies; only a daily count is kept.
+        if (!PROBLEMS.includes(b.reason as Problem)) throw new HttpError(400, `reason must be one of ${PROBLEMS.join(", ")}.`);
+        ok = await store.addProblem(hotspot, b.reason as Problem, now());
+      } else throw new HttpError(400, "kind must be quality, visit or problem.");
       return json(ok ? 202 : 404, ok ? { accepted: true } : { error: "Unknown hotspot." });
     }
 
@@ -262,8 +270,9 @@ export function createApp(opts: Options) {
       }
       if (path === "/api/router/config" && m === "GET") {
         await store.routerSeen(router.id, null, now());
+        const paused = h.pausedUntil != null && h.pausedUntil > now();
         return json(200, {
-          hotspot: h.id, name: h.name, ssid: h.ssid, active: h.active,
+          hotspot: h.id, name: h.name, ssid: h.ssid, active: h.active && !paused, pausedUntil: paused ? h.pausedUntil : null,
           limits: { maxMbps: Math.max(1, Math.round(h.limits.maxMbps)), dailyMb: Math.round(h.limits.dailyMb), hours: h.limits.hours, maxTempC: h.limits.maxTempC },
           poll: 300,
         });
@@ -286,6 +295,14 @@ export function createApp(opts: Options) {
         const acct = await store.ensureAccount(p.cid, undefined, now());
         const j = jurisdiction(acct.jurisdiction);
         return json(200, { profile: p, jurisdiction: j.code, policy: POLICY_VERSION, consent: currentConsent(await store.ledger(p.cid), j) });
+      }
+      if (path === "/api/me/export" && m === "GET") {
+        await store.ensureAccount(p.cid, undefined, now());
+        const data = await store.export(p.cid);
+        return new Response(JSON.stringify({ exportedAt: new Date(now()).toISOString(), profile: p, ...data }, null, 2), {
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": 'attachment; filename="node-my-data.json"' },
+        });
       }
       if (path === "/api/me" && m === "DELETE") {
         await store.forget(p.cid);
@@ -324,16 +341,34 @@ export function createApp(opts: Options) {
         }, now());
         return json(201, { hotspot: h });
       }
+      const qm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})\/quality$/.exec(path);
+      if (qm && m === "GET") {
+        if (!(await store.hotspot(qm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
+        const to = now();
+        return json(200, { days: 7, ...(await store.hotspotQuality(qm[1]!, to - 7 * 86_400_000, to)) });
+      }
+      const pm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})\/problems$/.exec(path);
+      if (pm && m === "GET") {
+        if (!(await store.hotspot(pm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
+        return json(200, { days: 7, problems: await store.hotspotProblems(pm[1]!, now() - 7 * 86_400_000) });
+      }
       const hm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})(\/activity)?$/.exec(path);
       if (hm && !hm[2] && m === "PATCH") {
         const b = await body(req);
         const h = await store.updateHotspot(hm[1]!, p.cid, {
           name: b.name == null ? undefined : text(b.name, 60, "name"),
+          ssid: b.ssid == null ? undefined : text(b.ssid, 32, "ssid"),
           active: b.active == null ? undefined : Boolean(b.active),
+          // A pause is a moment up to a week ahead; null ends it.
+          pausedUntil: b.pausedUntil === undefined ? undefined : b.pausedUntil === null ? null : Math.round(num(b.pausedUntil, now(), now() + 7 * 86_400_000, "pausedUntil")),
           limits: limitsPatch(b.limits),
         }, now());
         if (!h) throw new HttpError(404, "No such hotspot.");
         return json(200, { hotspot: h });
+      }
+      if (hm && !hm[2] && m === "DELETE") {
+        if (!(await store.removeHotspot(hm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
+        return json(200, { removed: true });
       }
       if (hm && hm[2] && m === "GET") {
         if (!(await store.hotspot(hm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");

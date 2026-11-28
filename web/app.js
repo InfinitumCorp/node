@@ -66,15 +66,85 @@ async function renderFind() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
-        out.innerHTML = hotspots.length ? `<ul class="list">${hotspots.map((h) => `
-          <li><div><strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
-          <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button></div></li>`).join("")}</ul>`
+        out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
+          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
+          <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button><br>${problemPicker(h.id)}</div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
+        if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
+        out.querySelectorAll("[data-problem]").forEach((s) => s.addEventListener("change", () => reportProblem(s)));
       } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
     }, () => { out.innerHTML = `<p class="error">${t("Location wasn't shared. You can still join any network named “Nøde”.")}</p>`; }, { maximumAge: 300000, timeout: 15000 });
   });
 }
+
+/**
+ * Where the hotspots are from you: direction and distance on rings, drawn here with no map tiles,
+ * so your location never leaves the page. Hotspot positions are the ~150 m cells the API gives.
+ */
+function radar(me, hotspots) {
+  const ns = "http://www.w3.org/2000/svg", R = 140, C = 160;
+  const el = (name, attrs, text) => {
+    const n = document.createElementNS(ns, name);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const maxKm = Math.max(1, ...hotspots.map((h) => h.distanceKm));
+  const ring = maxKm <= 1 ? 1 : maxKm <= 2 ? 2 : maxKm <= 5 ? 5 : Math.ceil(maxKm);
+  const svg = el("svg", { viewBox: "0 0 320 320", class: "radar", role: "img",
+    "aria-label": t("Map of {n} hotspots around you, up to {km} km", { n: hotspots.length, km: ring.toLocaleString(lang) }) });
+  for (const f of [1 / 3, 2 / 3, 1]) svg.append(el("circle", { cx: C, cy: C, r: R * f, class: "ring" }));
+  svg.append(el("text", { x: C + 4, y: C - R + 12, class: "ring-label" }, t("{km} km", { km: ring.toLocaleString(lang) })));
+  for (const [x, y, d] of [[C, 12, "N"], [312, C + 4, "E"], [C, 316, "S"], [8, C + 4, "W"]]) svg.append(el("text", { x, y, class: "compass", "text-anchor": "middle" }, t(d)));
+  svg.append(el("circle", { cx: C, cy: C, r: 6, class: "me" }));
+  const rad = Math.PI / 180;
+  hotspots.forEach((h, i) => {
+    const dy = (h.lat - me.latitude) * 111.32;
+    const dx = (h.lng - me.longitude) * 111.32 * Math.cos(me.latitude * rad);
+    const d = Math.hypot(dx, dy) || 1e-9;
+    const r = Math.min(R, (Math.min(h.distanceKm, ring) / ring) * R);
+    const x = C + (dx / d) * r, y = C - (dy / d) * r;
+    const g = el("g", { class: h.verified ? "pin live" : "pin" });
+    g.append(el("title", {}, h.name), el("circle", { cx: x, cy: y, r: 10 }), el("text", { x, y: y + 4, "text-anchor": "middle" }, i + 1));
+    svg.append(g);
+  });
+  return svg;
+}
+
+const PROBLEMS = {
+  no_internet: "Connected, but no internet",
+  not_found: "Couldn't find the network",
+  asks_password: "It asked for a password",
+  slow: "Too slow to use",
+};
+
+function problemPicker(id) {
+  if (sessionGet(`problem:${id}`)) return `<span class="fine">${t("Reported. Thank you.")}</span>`;
+  return `<select data-problem="${esc(id)}" aria-label="${esc(t("Report a problem with this hotspot"))}">
+    <option value="">${t("Report a problem…")}</option>
+    ${Object.entries(PROBLEMS).map(([k, v]) => `<option value="${k}">${t(v)}</option>`).join("")}
+  </select>`;
+}
+
+/** Tells the host something is wrong. Only a daily count per reason is kept: nothing about you. */
+async function reportProblem(select) {
+  const hotspot = select.dataset.problem, reason = select.value;
+  if (!reason) return;
+  select.disabled = true;
+  try {
+    await api("POST", "/api/telemetry", { kind: "problem", hotspot, session: sessionId(), reason });
+    sessionSet(`problem:${hotspot}`, "1");
+    select.replaceWith(Object.assign(document.createElement("span"), { className: "fine", textContent: t("Reported. Thank you.") }));
+  } catch (e) {
+    select.disabled = false;
+    select.value = "";
+    select.after(Object.assign(document.createElement("span"), { className: "error", textContent: ` ${e.message}` }));
+  }
+}
+
+function sessionGet(k) { try { return sessionStorage.getItem(`node:${k}`); } catch { return null; } }
+function sessionSet(k, v) { try { sessionStorage.setItem(`node:${k}`, v); } catch { /* private mode */ } }
 
 /** Counts a visit and, if you chose network quality reports, measures latency and download speed. */
 async function measure(hotspot, button) {
@@ -124,9 +194,9 @@ async function renderPrivacy() {
       <p class="fine" id="saved" aria-live="polite"></p>
     </section>
     <section class="card">
-      <h3>${t("Delete everything")}</h3>
-      <p class="muted">${t("Removes your Nøde account, your choices and any hotspots you host. Anonymous measurements were never linked to you.")}</p>
-      <button id="erase">${t("Delete my Nøde data")}</button>
+      <h3>${t("Your data, to keep or delete")}</h3>
+      <p class="muted">${t("Download a copy of everything Nøde holds about you, or delete it all. Deleting removes your Nøde account, your choices and any hotspots you host. Anonymous measurements were never linked to you.")}</p>
+      <div class="row start"><button type="button" id="export">${t("Download my data")}</button><button id="erase">${t("Delete my Nøde data")}</button></div>
     </section>`;
   const save = async (extra = {}) => {
     const choices = {};
@@ -142,6 +212,17 @@ async function renderPrivacy() {
     await api("PUT", "/api/me/consent", { jurisdiction: $("#jur").value, choices: {} });
     await loadMe();
     renderPrivacy();
+  });
+  $("#export").addEventListener("click", async () => {
+    const r = await fetch("/api/me/export", { headers: { authorization: `Bearer ${token()}`, accept: "application/json" } });
+    if (!r.ok) { $("#saved").textContent = t("Request failed ({status})", { status: r.status }); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = "node-my-data.json";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   });
   $("#erase").addEventListener("click", async () => {
     if (!confirm(t("Delete your Nøde account, choices and hotspots? This can't be undone."))) return;
@@ -180,6 +261,12 @@ async function batteryNote() {
     return `<p class="fine">${t("This phone: battery {pct}%", { pct: Math.round(b.level * 100) })}${b.charging ? t(", charging") : ""}.</p>`;
   } catch { return ""; }
 }
+
+const when = (ts) => {
+  const d = new Date(ts), today = new Date();
+  const time = d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === today.toDateString() ? time : `${d.toLocaleDateString(lang, { weekday: "short" })} ${time}`;
+};
 
 // Matches ROUTER_LIVE_MS in src/store.ts: four missed 5-minute check-ins.
 const ROUTER_LIVE_MS = 20 * 60_000;
@@ -239,12 +326,23 @@ function wireRouters(el, h) {
   el.querySelector("[data-pair]").addEventListener("click", async () => {
     try {
       const { router, key } = await api("POST", `/api/me/hotspots/${h.id}/routers`, {});
-      keyBox.innerHTML = `<div class="notice"><strong>${esc(t("{name} paired.", { name: router.name }))}</strong> ${t("Run this on the router now. The key is shown only once; if you lose it, unpair and pair again.")}
-        <pre class="cmd"></pre><button type="button">${t("Copy")}</button></div>`;
-      const cmd = `uci set node.settings.key='${key}'; uci commit node; nod-sync`;
-      keyBox.querySelector("pre").textContent = cmd;
-      const copy = keyBox.querySelector("button");
-      copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); copy.textContent = t("Copied"); } catch {} });
+      // A new router gets the one-command installer (it checks the scripts against SHA256SUMS); one already
+      // running Nøde only needs the key. Through the Russian mirror both point at the mirror.
+      const site = location.origin;
+      const api_ = site === "https://node.infinitumcorporation.ai" ? "" : ` NODE_API='${site}'`;
+      const role = ["home", "business", "relay", "gateway"].includes(h.kind) ? h.kind : "home";
+      const cmds = [
+        [t("New router (OpenWrt 23.05 or later):"), `wget -qO /tmp/nod-install.sh ${site}/firmware/openwrt/nod-install.sh && ROLE=${role} NODE_KEY='${key}'${api_} sh /tmp/nod-install.sh`],
+        [t("Router that already runs Nøde:"), `uci set node.settings.key='${key}';${api_ ? ` uci set node.settings.api='${site}';` : ""} uci commit node; nod-sync`],
+      ];
+      keyBox.innerHTML = `<div class="notice"><strong>${esc(t("{name} paired.", { name: router.name }))}</strong> ${t("Run one of these on the router now. The key is shown only once; if you lose it, unpair and pair again.")}
+        ${cmds.map(() => `<p class="fine"></p><pre class="cmd"></pre><button type="button">${t("Copy")}</button>`).join("")}</div>`;
+      const labels = keyBox.querySelectorAll("p.fine"), pres = keyBox.querySelectorAll("pre"), buttons = keyBox.querySelectorAll("button");
+      cmds.forEach(([label, cmd], i) => {
+        labels[i].textContent = label;
+        pres[i].textContent = cmd;
+        buttons[i].addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); buttons[i].textContent = t("Copied"); } catch {} });
+      });
       load();
     } catch (e) { keyBox.textContent = e.message; }
   });
@@ -300,16 +398,47 @@ async function renderHost() {
   for (const h of hotspots) {
     const el = document.createElement("form");
     el.className = "card";
+    const paused = h.active && h.pausedUntil && h.pausedUntil > Date.now();
+    const status = !h.active ? t("Stopped") : paused ? t("Paused until {time}", { time: when(h.pausedUntil) }) : t("Sharing");
     el.innerHTML = `<div class="row between"><div><strong>${esc(h.name)}</strong> <span class="tag">${esc(t(h.kind))}</span><br>
-      <span class="muted">${h.active ? t("Sharing") : t("Stopped")} · ${esc(h.ssid)}</span></div>
-      <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? t("Stop") : t("Start sharing")}</button></div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save limits")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
+      <span class="muted">${esc(status)} · ${esc(h.ssid)}</span></div>
+      <div class="row end">
+        ${h.active && !paused ? `<select data-pause aria-label="${esc(t("Pause sharing"))}"><option value="">${t("Pause…")}</option>
+          <option value="1">${t("for 1 hour")}</option><option value="3">${t("for 3 hours")}</option><option value="morning">${t("until 8:00 tomorrow")}</option></select>` : ""}
+        ${paused ? `<button type="button" class="primary" data-resume>${t("Resume now")}</button>` : ""}
+        <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? t("Stop") : t("Start sharing")}</button></div></div>
+      <div class="grid">
+        <label class="field"><span>${t("Name people see")}</span><input type="text" name="hname" maxlength="60" required value="${esc(h.name)}"></label>
+        <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
+      </div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine"></div>
+      <p class="fine" data-quality></p>
+      <p class="fine warn" data-problems hidden></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
       <div class="row start"><button type="button" data-pair>${t("Pair a router")}</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
+    el.querySelector("[data-resume]")?.addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { pausedUntil: null }); renderHost(); });
+    el.querySelector("[data-pause]")?.addEventListener("change", async (ev) => {
+      const v = ev.target.value;
+      if (!v) return;
+      let until;
+      if (v === "morning") { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); until = d.getTime(); }
+      else until = Date.now() + Number(v) * 3_600_000;
+      await api("PATCH", `/api/me/hotspots/${h.id}`, { pausedUntil: until });
+      renderHost();
+    });
     el.addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      try { await api("PATCH", `/api/me/hotspots/${h.id}`, { limits: readLimits(el) }); el.querySelector("[data-out]").textContent = t("Saved."); }
+      const f = el.elements;
+      try {
+        await api("PATCH", `/api/me/hotspots/${h.id}`, { name: f.namedItem("hname").value, ssid: f.namedItem("ssid").value, limits: readLimits(el) });
+        el.querySelector("[data-out]").textContent = h.kind === "phone" || f.namedItem("ssid").value === h.ssid ? t("Saved.") : t("Saved. Paired routers switch to the new network name within 5 minutes.");
+      }
+      catch (e) { el.querySelector("[data-out]").textContent = e.message; }
+    });
+    el.querySelector("[data-remove]").addEventListener("click", async () => {
+      if (!confirm(t("Remove “{name}”? Its routers stop working and its history is deleted. This can't be undone.", { name: h.name }))) return;
+      try { await api("DELETE", `/api/me/hotspots/${h.id}`); renderHost(); }
       catch (e) { el.querySelector("[data-out]").textContent = e.message; }
     });
     el.querySelector("[data-activity]")?.addEventListener("click", async () => {
@@ -318,6 +447,20 @@ async function renderHost() {
         ? r.rows.map((x) => esc(t("{when}: ~{n} sessions", { when: new Date(x.hour).toLocaleString(lang), n: x.sessions }))).join("<br>")
         : t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden).");
     });
+    api("GET", `/api/me/hotspots/${h.id}/quality`).then((q) => {
+      el.querySelector("[data-quality]").textContent = !q.enough
+        ? t("Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).", { n: q.minSessions })
+        : t("Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.", {
+          sessions: q.sessions, down: q.medianDownMbps == null ? "—" : q.medianDownMbps.toLocaleString(lang), ok: Math.round(q.successRate * 100) });
+    }).catch(() => {});
+    api("GET", `/api/me/hotspots/${h.id}/problems`).then(({ problems }) => {
+      const seen = Object.entries(problems).filter(([, n]) => n > 0);
+      if (!seen.length) return;
+      const box = el.querySelector("[data-problems]");
+      box.textContent = t("Guests reported, last 7 days: {list}", {
+        list: seen.map(([k, n]) => t("{what} ({n})", { what: t(PROBLEMS[k] ?? k), n })).join(", ") });
+      box.hidden = false;
+    }).catch(() => {});
     if (h.kind !== "phone") wireRouters(el, h);
     spots.append(el);
   }

@@ -279,7 +279,7 @@
     },
     "/api/telemetry": {
       "post": {
-        "summary": "Anonymous visit or network-quality sample (only with the matching consent)",
+        "summary": "Anonymous visit or network-quality sample (only with the matching consent), or a problem report",
         "requestBody": {
           "required": true,
           "content": {
@@ -295,7 +295,8 @@
                   "kind": {
                     "enum": [
                       "quality",
-                      "visit"
+                      "visit",
+                      "problem"
                     ]
                   },
                   "hotspot": {
@@ -316,6 +317,15 @@
                   },
                   "latencyMs": {
                     "type": "number"
+                  },
+                  "reason": {
+                    "enum": [
+                      "no_internet",
+                      "not_found",
+                      "asks_password",
+                      "slow"
+                    ],
+                    "description": "With kind \"problem\": what went wrong. Reported on purpose by the guest; only a daily count per reason is stored."
                   }
                 }
               }
@@ -397,6 +407,38 @@
         "responses": {
           "200": {
             "description": "Erased",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/export": {
+      "get": {
+        "summary": "Download everything Nøde holds about me (account, consent ledger, hotspots, routers) as JSON",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A JSON file (content-disposition: attachment)",
             "content": {
               "application/json": {
                 "schema": {
@@ -646,6 +688,18 @@
                   },
                   "limits": {
                     "$ref": "#/components/schemas/Limits"
+                  },
+                  "ssid": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Wi-Fi network name; paired routers pick it up on their next sync"
+                  },
+                  "pausedUntil": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Pause until this time (ms since epoch, at most 7 days ahead): off the map and routers stop sharing; null ends the pause. Start/Stop also ends it."
                   }
                 }
               }
@@ -692,6 +746,33 @@
                 }
               }
             }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a hotspot, its paired routers (their keys stop working at once), router history, pauses and problem reports",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{removed:true}"
+          },
+          "404": {
+            "description": "Not your hotspot"
           }
         }
       }
@@ -745,6 +826,117 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/me/hotspots/{id}/quality": {
+      "get": {
+        "summary": "Guests measured speed at my hotspot over 7 days, as one group; nothing under 10 sessions",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Either {enough:false,minSessions} or {enough:true,sessions,medianDownMbps,p90LatencyMs,successRate}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer"
+                    },
+                    "enough": {
+                      "type": "boolean"
+                    },
+                    "minSessions": {
+                      "type": "integer"
+                    },
+                    "sessions": {
+                      "type": "integer"
+                    },
+                    "medianDownMbps": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "p90LatencyMs": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "successRate": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/me/hotspots/{id}/problems": {
+      "get": {
+        "summary": "Guests’ problem reports at your hotspot over the last 7 days, counted per reason (no session or identity is kept)",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{days:7, problems:{no_internet,not_found,asks_password,slow}}"
+          },
+          "404": {
+            "description": "Not your hotspot"
           }
         }
       }
@@ -983,7 +1175,15 @@
                       "type": "string"
                     },
                     "active": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "false while the host has stopped or paused the hotspot"
+                    },
+                    "pausedUntil": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "When a pause ends (ms since epoch), or null"
                     },
                     "limits": {
                       "type": "object",

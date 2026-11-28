@@ -1,5 +1,5 @@
 // Offline shell for Nøde. API calls always go to the network.
-const CACHE = "node-v3";
+const CACHE = "node-v6";
 const SHELL = ["/", "/styles.css", "/app.js", "/i18n.js", "/qrcode.vendor.js", "/cumulus-bar.js", "/icon.svg", "/manifest.webmanifest"];
 self.addEventListener("install", (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener("activate", (e) => e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())));
