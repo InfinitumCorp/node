@@ -54,7 +54,7 @@ rule="$(grep 'Nøde guest no private nets' /tmp/fw.nft)"
 [ -n "$rule" ] || fail "no private-nets rule in the ruleset"
 echo "$rule"
 ! echo "$rule" | grep -q 'l4proto' || fail "the private-nets rule must cover every protocol, not just TCP/UDP"
-grep -q 'jump forward_guest' /tmp/fw.nft || fail "no guest forward chain"
+grep -q 'chain forward_guest' /tmp/fw.nft || fail "no guest forward chain"
 
 echo "== limits: stopped by host"
 /usr/sbin/nod-limits
