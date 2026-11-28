@@ -84,3 +84,4 @@ select[data-pause] { width: auto; }
 button.link.danger { color: var(--danger); margin-left: auto; }
 .list select[data-problem] { font-size: 13px; padding: 4px 6px; margin-top: 6px; max-width: 100%; width: auto; }
 .presets { gap: 12px; margin: 4px 0 6px; font-size: 13px; }
+details#history { margin-top: 12px; } details#history summary { cursor: pointer; color: var(--accent); }

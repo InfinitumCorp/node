@@ -192,6 +192,7 @@ async function renderPrivacy() {
             <input type="checkbox" name="${esc(p.id)}" ${c[p.id].granted ? "checked" : ""} ${p.necessary ? "disabled" : ""}></label>`).join("")}
       </form>
       <p class="fine" id="saved" aria-live="polite"></p>
+      <details id="history"><summary>${t("Your choices over time")}</summary><div data-history class="fine"></div></details>
     </section>
     <section class="card">
       <h3>${t("Your data, to keep or delete")}</h3>
@@ -208,6 +209,17 @@ async function renderPrivacy() {
     } catch (e) { $("#saved").textContent = e.message; }
   };
   $("#choices").addEventListener("change", () => save());
+  $("#history").addEventListener("toggle", async (e) => {
+    if (!e.currentTarget.open) return;
+    const box = view.querySelector("[data-history]");
+    try {
+      const { consentLedger } = await api("GET", "/api/me/export");
+      const title = Object.fromEntries(purposes.map((p) => [p.id, t(p.title)]));
+      box.innerHTML = consentLedger.length
+        ? `<ul class="list">${[...consentLedger].sort((a, b) => b.at - a.at).map((x) => `<li><div>${esc(title[x.purpose] ?? x.purpose)}<br><span class="muted">${esc(new Date(x.at).toLocaleString(lang))}</span></div><span class="tag ${x.granted ? "ok" : ""}">${x.granted ? t("allowed") : t("declined")}</span></li>`).join("")}</ul>`
+        : esc(t("No choices recorded yet, so the starting choices for where you live apply."));
+    } catch (err) { box.textContent = err.message; }
+  });
   $("#jur").addEventListener("change", async () => {
     await api("PUT", "/api/me/consent", { jurisdiction: $("#jur").value, choices: {} });
     await loadMe();
