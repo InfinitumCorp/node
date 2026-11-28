@@ -793,6 +793,88 @@
         }
       }
     },
+    "/api/me/hotspots/{id}/quality": {
+      "get": {
+        "summary": "Guests measured speed at my hotspot over 7 days, as one group; nothing under 10 sessions",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Either {enough:false,minSessions} or {enough:true,sessions,medianDownMbps,p90LatencyMs,successRate}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer"
+                    },
+                    "enough": {
+                      "type": "boolean"
+                    },
+                    "minSessions": {
+                      "type": "integer"
+                    },
+                    "sessions": {
+                      "type": "integer"
+                    },
+                    "medianDownMbps": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "p90LatencyMs": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "successRate": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/hotspots/{id}/routers": {
       "get": {
         "summary": "Paired routers and what they last reported",

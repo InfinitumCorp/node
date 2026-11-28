@@ -19,6 +19,7 @@ import { HOTSPOT_KINDS, type HostLimits, type HotspotKind, type Store } from "./
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
  *   PATCH /api/me/hotspots/:id            (CID) name, ssid, active (the stop button), pausedUntil, limits
  *   GET  /api/me/hotspots/:id/activity    (CID) the venue's own busy-hours report
+ *   GET  /api/me/hotspots/:id/quality     (CID) guests' measured speed over 7 days, hidden under 10 sessions
  *   GET  /api/me/hotspots/:id/routers     (CID) paired Nøde routers and what they last reported
  *   POST /api/me/hotspots/:id/routers     (CID) { name? } pair a router; the key is shown once
  *   DELETE /api/me/hotspots/:id/routers/:rid  (CID) unpair; the key stops working at once
@@ -310,6 +311,12 @@ export function createApp(opts: Options) {
           lat: num(b.lat, -90, 90, "lat"), lng: num(b.lng, -180, 180, "lng"), limits: limitsPatch(b.limits),
         }, now());
         return json(201, { hotspot: h });
+      }
+      const qm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})\/quality$/.exec(path);
+      if (qm && m === "GET") {
+        if (!(await store.hotspot(qm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
+        const to = now();
+        return json(200, { days: 7, ...(await store.hotspotQuality(qm[1]!, to - 7 * 86_400_000, to)) });
       }
       const hm = /^\/api\/me\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})(\/activity)?$/.exec(path);
       if (hm && !hm[2] && m === "PATCH") {

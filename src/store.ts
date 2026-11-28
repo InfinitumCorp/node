@@ -1,5 +1,5 @@
 import type { LedgerEntry, Purpose } from "./consent.ts";
-import { geohash, geohashCenter, hourOf, percentile, roundCount, suppress } from "./privacy.ts";
+import { MIN_GROUP, geohash, geohashCenter, hourOf, percentile, roundCount, suppress } from "./privacy.ts";
 import { SCHEMA, type Sql } from "./sql.ts";
 
 /**
@@ -310,6 +310,24 @@ export function openStore(sql: Sql) {
       }));
       const { rows: kept, suppressed } = suppress(all);
       return { rows: kept.map(({ key: _k, sessions, ...r }) => ({ ...r, sessions: roundCount(sessions) })), suppressed };
+    },
+
+    /**
+     * A host's view of their own hotspot: guests' measured speed over a period, as one group.
+     * Under MIN_GROUP sessions nothing is shown, the same rule as the licensed reports.
+     */
+    async hotspotQuality(hotspot: string, from: number, to: number) {
+      await init();
+      const rows = await sql.all("SELECT session, down_mbps, latency_ms, ok FROM quality_samples WHERE hotspot = ? AND hour >= ? AND hour <= ?", hotspot, hourOf(from), to);
+      const sessions = new Set(rows.map((r) => String(r.session))).size;
+      if (sessions < MIN_GROUP) return { enough: false as const, minSessions: MIN_GROUP };
+      const down = rows.filter((r) => r.down_mbps != null).map((r) => Number(r.down_mbps));
+      const lat = rows.filter((r) => r.latency_ms != null).map((r) => Number(r.latency_ms));
+      const ok = rows.reduce((n, r) => n + Number(r.ok), 0);
+      return {
+        enough: true as const, sessions: roundCount(sessions),
+        medianDownMbps: percentile(down, 50), p90LatencyMs: percentile(lat, 90), successRate: Math.round((ok / rows.length) * 1000) / 1000,
+      };
     },
 
     async venueReport(hotspot: string, from: number, to: number) {

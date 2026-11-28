@@ -315,6 +315,26 @@ test("a person can download everything Nøde holds about them, without router ke
   a.close();
 });
 
+test("a host sees guests' speed at their own hotspot only once 10 guests measured it", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_q", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_q", body: { name: "Library", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const q = () => a.call("GET", `/api/me/hotspots/${h.id}/quality`, { as: "cid_q" });
+  assert.equal((await a.call("GET", `/api/me/hotspots/${h.id}/quality`, { as: "cid_other" })).status, 404, "owner only");
+  const sample = (i: number, ok = true) => a.call("POST", "/api/telemetry", { body: { kind: "quality", hotspot: h.id, session: `guest-${i}`, ok, downMbps: 10 + i, latencyMs: 30 + i } });
+  for (let i = 0; i < 9; i++) await sample(i);
+  assert.deepEqual((await q()).json, { days: 7, enough: false, minSessions: 10 });
+  await sample(9, false);
+  const r = (await q()).json;
+  assert.equal(r.enough, true);
+  assert.equal(r.sessions, 10);
+  assert.equal(r.successRate, 0.9);
+  assert.ok(r.medianDownMbps >= 14 && r.medianDownMbps <= 15);
+  a.tick(8 * 86_400_000);
+  assert.equal((await q()).json.enough, false, "only the last 7 days count");
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });

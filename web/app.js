@@ -331,6 +331,7 @@ async function renderHost() {
         <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
       </div>
       ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
+      <p class="fine" data-quality></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
       <div class="row start"><button type="button" data-pair>${t("Pair a router")}</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
@@ -359,6 +360,12 @@ async function renderHost() {
         ? r.rows.map((x) => esc(t("{when}: ~{n} sessions", { when: new Date(x.hour).toLocaleString(lang), n: x.sessions }))).join("<br>")
         : t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden).");
     });
+    api("GET", `/api/me/hotspots/${h.id}/quality`).then((q) => {
+      el.querySelector("[data-quality]").textContent = !q.enough
+        ? t("Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).", { n: q.minSessions })
+        : t("Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.", {
+          sessions: q.sessions, down: q.medianDownMbps == null ? "—" : q.medianDownMbps.toLocaleString(lang), ok: Math.round(q.successRate * 100) });
+    }).catch(() => {});
     if (h.kind !== "phone") wireRouters(el, h);
     spots.append(el);
   }
