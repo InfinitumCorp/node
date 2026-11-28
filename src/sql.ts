@@ -38,6 +38,8 @@ export const SCHEMA: string[] = [
   `CREATE TABLE IF NOT EXISTS routers (id TEXT PRIMARY KEY, hotspot TEXT NOT NULL, owner TEXT NOT NULL, name TEXT NOT NULL,
     key_hash TEXT NOT NULL UNIQUE, created_at INTEGER NOT NULL, last_seen INTEGER, state TEXT, temp_c INTEGER, used_mb INTEGER)`,
   `CREATE INDEX IF NOT EXISTS routers_by_hotspot ON routers(hotspot)`,
+  // A host's "pause for a while": the hotspot counts as stopped until then, and starts again by itself.
+  `CREATE TABLE IF NOT EXISTS hotspot_pauses (hotspot TEXT PRIMARY KEY, until INTEGER NOT NULL)`,
   // Guest MB a router shared per router-day (it resets at the router's local midnight). The host's own figures.
   `CREATE TABLE IF NOT EXISTS router_days (router TEXT NOT NULL, started_at INTEGER NOT NULL, last_at INTEGER NOT NULL, used_mb INTEGER NOT NULL,
     PRIMARY KEY (router, started_at))`,

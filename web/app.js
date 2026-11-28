@@ -124,9 +124,9 @@ async function renderPrivacy() {
       <p class="fine" id="saved" aria-live="polite"></p>
     </section>
     <section class="card">
-      <h3>${t("Delete everything")}</h3>
-      <p class="muted">${t("Removes your Nøde account, your choices and any hotspots you host. Anonymous measurements were never linked to you.")}</p>
-      <button id="erase">${t("Delete my Nøde data")}</button>
+      <h3>${t("Your data, to keep or delete")}</h3>
+      <p class="muted">${t("Download a copy of everything Nøde holds about you, or delete it all. Deleting removes your Nøde account, your choices and any hotspots you host. Anonymous measurements were never linked to you.")}</p>
+      <div class="row start"><button type="button" id="export">${t("Download my data")}</button><button id="erase">${t("Delete my Nøde data")}</button></div>
     </section>`;
   const save = async (extra = {}) => {
     const choices = {};
@@ -142,6 +142,17 @@ async function renderPrivacy() {
     await api("PUT", "/api/me/consent", { jurisdiction: $("#jur").value, choices: {} });
     await loadMe();
     renderPrivacy();
+  });
+  $("#export").addEventListener("click", async () => {
+    const r = await fetch("/api/me/export", { headers: { authorization: `Bearer ${token()}`, accept: "application/json" } });
+    if (!r.ok) { $("#saved").textContent = t("Request failed ({status})", { status: r.status }); return; }
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = "node-my-data.json";
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
   });
   $("#erase").addEventListener("click", async () => {
     if (!confirm(t("Delete your Nøde account, choices and hotspots? This can't be undone."))) return;
@@ -180,6 +191,12 @@ async function batteryNote() {
     return `<p class="fine">${t("This phone: battery {pct}%", { pct: Math.round(b.level * 100) })}${b.charging ? t(", charging") : ""}.</p>`;
   } catch { return ""; }
 }
+
+const when = (ts) => {
+  const d = new Date(ts), today = new Date();
+  const time = d.toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" });
+  return d.toDateString() === today.toDateString() ? time : `${d.toLocaleDateString(lang, { weekday: "short" })} ${time}`;
+};
 
 // Matches ROUTER_LIVE_MS in src/store.ts: four missed 5-minute check-ins.
 const ROUTER_LIVE_MS = 20 * 60_000;
@@ -300,16 +317,40 @@ async function renderHost() {
   for (const h of hotspots) {
     const el = document.createElement("form");
     el.className = "card";
+    const paused = h.active && h.pausedUntil && h.pausedUntil > Date.now();
+    const status = !h.active ? t("Stopped") : paused ? t("Paused until {time}", { time: when(h.pausedUntil) }) : t("Sharing");
     el.innerHTML = `<div class="row between"><div><strong>${esc(h.name)}</strong> <span class="tag">${esc(t(h.kind))}</span><br>
-      <span class="muted">${h.active ? t("Sharing") : t("Stopped")} · ${esc(h.ssid)}</span></div>
-      <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? t("Stop") : t("Start sharing")}</button></div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save limits")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
+      <span class="muted">${esc(status)} · ${esc(h.ssid)}</span></div>
+      <div class="row end">
+        ${h.active && !paused ? `<select data-pause aria-label="${esc(t("Pause sharing"))}"><option value="">${t("Pause…")}</option>
+          <option value="1">${t("for 1 hour")}</option><option value="3">${t("for 3 hours")}</option><option value="morning">${t("until 8:00 tomorrow")}</option></select>` : ""}
+        ${paused ? `<button type="button" class="primary" data-resume>${t("Resume now")}</button>` : ""}
+        <button type="button" class="${h.active ? "stop" : "primary"}" data-toggle>${h.active ? t("Stop") : t("Start sharing")}</button></div></div>
+      <div class="grid">
+        <label class="field"><span>${t("Name people see")}</span><input type="text" name="hname" maxlength="60" required value="${esc(h.name)}"></label>
+        <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
+      </div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
       <div class="row start"><button type="button" data-pair>${t("Pair a router")}</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
+    el.querySelector("[data-resume]")?.addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { pausedUntil: null }); renderHost(); });
+    el.querySelector("[data-pause]")?.addEventListener("change", async (ev) => {
+      const v = ev.target.value;
+      if (!v) return;
+      let until;
+      if (v === "morning") { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(8, 0, 0, 0); until = d.getTime(); }
+      else until = Date.now() + Number(v) * 3_600_000;
+      await api("PATCH", `/api/me/hotspots/${h.id}`, { pausedUntil: until });
+      renderHost();
+    });
     el.addEventListener("submit", async (ev) => {
       ev.preventDefault();
-      try { await api("PATCH", `/api/me/hotspots/${h.id}`, { limits: readLimits(el) }); el.querySelector("[data-out]").textContent = t("Saved."); }
+      const f = el.elements;
+      try {
+        await api("PATCH", `/api/me/hotspots/${h.id}`, { name: f.namedItem("hname").value, ssid: f.namedItem("ssid").value, limits: readLimits(el) });
+        el.querySelector("[data-out]").textContent = h.kind === "phone" || f.namedItem("ssid").value === h.ssid ? t("Saved.") : t("Saved. Paired routers switch to the new network name within 5 minutes.");
+      }
       catch (e) { el.querySelector("[data-out]").textContent = e.message; }
     });
     el.querySelector("[data-activity]")?.addEventListener("click", async () => {

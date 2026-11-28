@@ -418,6 +418,38 @@
         }
       }
     },
+    "/api/me/export": {
+      "get": {
+        "summary": "Download everything Nøde holds about me (account, consent ledger, hotspots, routers) as JSON",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A JSON file (content-disposition: attachment)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/me/consent": {
       "put": {
         "summary": "Change data choices",
@@ -646,6 +678,18 @@
                   },
                   "limits": {
                     "$ref": "#/components/schemas/Limits"
+                  },
+                  "ssid": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Wi-Fi network name; paired routers pick it up on their next sync"
+                  },
+                  "pausedUntil": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "description": "Pause until this time (ms since epoch, at most 7 days ahead): off the map and routers stop sharing; null ends the pause. Start/Stop also ends it."
                   }
                 }
               }
@@ -983,7 +1027,15 @@
                       "type": "string"
                     },
                     "active": {
-                      "type": "boolean"
+                      "type": "boolean",
+                      "description": "false while the host has stopped or paused the hotspot"
+                    },
+                    "pausedUntil": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "description": "When a pause ends (ms since epoch), or null"
                     },
                     "limits": {
                       "type": "object",

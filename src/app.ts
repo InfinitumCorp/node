@@ -13,10 +13,11 @@ import { HOTSPOT_KINDS, type HostLimits, type HotspotKind, type Store } from "./
  *   GET  /api/hotspots?lat&lng            active hotspots around a point (public)
  *   GET  /api/me                          (CID) account, consent state
  *   PUT  /api/me/consent                  (CID) { jurisdiction?, choices: { purpose: boolean } }
+ *   GET  /api/me/export                   (CID) everything Nøde holds about me, as a JSON download
  *   DELETE /api/me                        (CID) erase account, ledger and hotspots
  *   GET  /api/me/hotspots                 (CID) my hotspots
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
- *   PATCH /api/me/hotspots/:id            (CID) name, active (the stop button), limits
+ *   PATCH /api/me/hotspots/:id            (CID) name, ssid, active (the stop button), pausedUntil, limits
  *   GET  /api/me/hotspots/:id/activity    (CID) the venue's own busy-hours report
  *   GET  /api/me/hotspots/:id/routers     (CID) paired Nøde routers and what they last reported
  *   POST /api/me/hotspots/:id/routers     (CID) { name? } pair a router; the key is shown once
@@ -239,8 +240,9 @@ export function createApp(opts: Options) {
       const { router, hotspot: h } = found;
       if (path === "/api/router/config" && m === "GET") {
         await store.routerSeen(router.id, null, now());
+        const paused = h.pausedUntil != null && h.pausedUntil > now();
         return json(200, {
-          hotspot: h.id, name: h.name, ssid: h.ssid, active: h.active,
+          hotspot: h.id, name: h.name, ssid: h.ssid, active: h.active && !paused, pausedUntil: paused ? h.pausedUntil : null,
           limits: { maxMbps: Math.max(1, Math.round(h.limits.maxMbps)), dailyMb: Math.round(h.limits.dailyMb), hours: h.limits.hours, maxTempC: h.limits.maxTempC },
           poll: 300,
         });
@@ -263,6 +265,14 @@ export function createApp(opts: Options) {
         const acct = await store.ensureAccount(p.cid, undefined, now());
         const j = jurisdiction(acct.jurisdiction);
         return json(200, { profile: p, jurisdiction: j.code, policy: POLICY_VERSION, consent: currentConsent(await store.ledger(p.cid), j) });
+      }
+      if (path === "/api/me/export" && m === "GET") {
+        await store.ensureAccount(p.cid, undefined, now());
+        const data = await store.export(p.cid);
+        return new Response(JSON.stringify({ exportedAt: new Date(now()).toISOString(), profile: p, ...data }, null, 2), {
+          status: 200,
+          headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "content-disposition": 'attachment; filename="node-my-data.json"' },
+        });
       }
       if (path === "/api/me" && m === "DELETE") {
         await store.forget(p.cid);
@@ -306,7 +316,10 @@ export function createApp(opts: Options) {
         const b = await body(req);
         const h = await store.updateHotspot(hm[1]!, p.cid, {
           name: b.name == null ? undefined : text(b.name, 60, "name"),
+          ssid: b.ssid == null ? undefined : text(b.ssid, 32, "ssid"),
           active: b.active == null ? undefined : Boolean(b.active),
+          // A pause is a moment up to a week ahead; null ends it.
+          pausedUntil: b.pausedUntil === undefined ? undefined : b.pausedUntil === null ? null : Math.round(num(b.pausedUntil, now(), now() + 7 * 86_400_000, "pausedUntil")),
           limits: limitsPatch(b.limits),
         }, now());
         if (!h) throw new HttpError(404, "No such hotspot.");

@@ -165,7 +165,7 @@ test("a paired router reads its hotspot's switch and limits, and reports back", 
   assert.equal((await a.call("GET", `/api/router/config?key=${made.json.key}`)).status, 401, "never a key in the URL");
   let cfg = await a.call("GET", "/api/router/config", { headers: bearer });
   assert.equal(cfg.status, 200);
-  assert.deepEqual(cfg.json, { hotspot: h.id, name: "Flat", ssid: "Nøde Flat", active: false, limits: { maxMbps: 15, dailyMb: 2048, hours: [7, 8], maxTempC: 42 }, poll: 300 });
+  assert.deepEqual(cfg.json, { hotspot: h.id, name: "Flat", ssid: "Nøde Flat", active: false, pausedUntil: null, limits: { maxMbps: 15, dailyMb: 2048, hours: [7, 8], maxTempC: 42 }, poll: 300 });
 
   await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_r", body: { active: true } });
   cfg = await a.call("GET", "/api/router/config", { headers: bearer });
@@ -241,6 +241,77 @@ test("a host sees what each router shared per day, newest first", async () => {
   await a.call("DELETE", `${base}/${router.id}`, { as: "cid_d" });
   const left = await a.store.routers(h.id, "cid_d");
   assert.equal(left.length, 0);
+  a.close();
+});
+
+test("a host can pause a hotspot for a while, and it comes back by itself", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_p", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_p", body: { name: "Kiosk", kind: "business", lat: 40.4, lng: -3.7 } })).json.hotspot;
+  const patch = (b: unknown) => a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_p", body: b });
+  await patch({ active: true });
+  const { key } = (await a.call("POST", `/api/me/hotspots/${h.id}/routers`, { as: "cid_p", body: {} })).json;
+  const bearer = { authorization: `Bearer ${key}` };
+  const listed = async () => (await a.call("GET", "/api/hotspots?lat=40.4&lng=-3.7")).json.hotspots.length;
+  await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "sharing" } });
+  assert.equal(await listed(), 1);
+
+  assert.equal((await patch({ pausedUntil: T0 + 8 * 86_400_000 })).status, 400, "a week at most");
+  const until = T0 + 2 * 3_600_000;
+  const r = await patch({ pausedUntil: until });
+  assert.equal(r.json.hotspot.pausedUntil, until);
+  assert.equal(r.json.hotspot.active, true, "the switch stays on; the pause sits on top");
+  let cfg = (await a.call("GET", "/api/router/config", { headers: bearer })).json;
+  assert.equal(cfg.active, false, "the router stops while paused");
+  assert.equal(cfg.pausedUntil, until);
+  assert.equal(await listed(), 0, "off the map while paused");
+
+  a.tick(2 * 3_600_000 + 1);
+  cfg = (await a.call("GET", "/api/router/config", { headers: bearer })).json;
+  assert.equal(cfg.active, true, "back on by itself");
+  assert.equal(cfg.pausedUntil, null);
+  await a.call("POST", "/api/router/status", { headers: bearer, body: { state: "sharing" } });
+  assert.equal(await listed(), 1);
+
+  await patch({ pausedUntil: T0 + 10 * 3_600_000 });
+  assert.equal((await patch({ active: true })).json.hotspot.pausedUntil, null, "Start ends a pause");
+  await patch({ pausedUntil: T0 + 10 * 3_600_000 });
+  assert.equal((await patch({ pausedUntil: null })).json.hotspot.pausedUntil, null, "or end it directly");
+  a.close();
+});
+
+test("changing the network name reaches the router", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_s", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_s", body: { name: "Bar", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const { key } = (await a.call("POST", `/api/me/hotspots/${h.id}/routers`, { as: "cid_s", body: {} })).json;
+  assert.equal((await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_s", body: { ssid: "x".repeat(33) } })).status, 400);
+  const r = await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_s", body: { ssid: "Nøde Bar", name: "The Bar" } });
+  assert.equal(r.json.hotspot.ssid, "Nøde Bar");
+  const cfg = (await a.call("GET", "/api/router/config", { headers: { authorization: `Bearer ${key}` } })).json;
+  assert.equal(cfg.ssid, "Nøde Bar");
+  assert.equal(cfg.name, "The Bar");
+  a.close();
+});
+
+test("a person can download everything Nøde holds about them, without router keys", async () => {
+  const a = await boot();
+  assert.equal((await a.call("GET", "/api/me/export")).status, 401);
+  await a.call("PUT", "/api/me/consent", { as: "cid_x", body: { jurisdiction: "EU", choices: { research: true, host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_x", body: { name: "Home", kind: "home", lat: 1, lng: 1 } })).json.hotspot;
+  const { key } = (await a.call("POST", `/api/me/hotspots/${h.id}/routers`, { as: "cid_x", body: { name: "Attic" } })).json;
+  await a.call("POST", "/api/router/status", { headers: { authorization: `Bearer ${key}` }, body: { state: "sharing", usedMb: 42 } });
+
+  const r = await a.call("GET", "/api/me/export", { as: "cid_x" });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.account.cid, "cid_x");
+  assert.equal(r.json.account.jurisdiction, "EU");
+  assert.ok(r.json.consentLedger.some((e: any) => e.purpose === "research" && e.granted));
+  assert.equal(r.json.hotspots[0].name, "Home");
+  assert.equal(r.json.routers[0].name, "Attic");
+  assert.equal(r.json.routers[0].days[0].usedMb, 42);
+  const text = JSON.stringify(r.json);
+  assert.ok(!text.includes(key) && !text.includes("key_hash"), "no key and no key hash");
   a.close();
 });
 

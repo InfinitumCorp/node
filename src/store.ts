@@ -59,6 +59,8 @@ export interface Hotspot {
   lat: number;
   lng: number;
   active: boolean;
+  /** While set and in the future, the hotspot is paused: not on the map and its routers stop sharing. */
+  pausedUntil: number | null;
   limits: HostLimits;
   owner?: string;
   updatedAt: number;
@@ -82,7 +84,7 @@ export function openStore(sql: Sql) {
     const c = geohashCenter(String(r.area));
     return {
       id: String(r.id), name: String(r.name), kind: r.kind as HotspotKind, ssid: String(r.ssid), area: String(r.area),
-      lat: c.lat, lng: c.lng, active: Boolean(r.active), limits: JSON.parse(String(r.limits)) as HostLimits,
+      lat: c.lat, lng: c.lng, active: Boolean(r.active), pausedUntil: r.paused_until == null ? null : Number(r.paused_until), limits: JSON.parse(String(r.limits)) as HostLimits,
       updatedAt: Number(r.updated_at), ...(withOwner ? { owner: String(r.owner) } : {}),
     };
   };
@@ -118,8 +120,24 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM consent_ledger WHERE cid = ?", cid);
       await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE owner = ?)", cid);
       await sql.run("DELETE FROM routers WHERE owner = ?", cid);
+      await sql.run("DELETE FROM hotspot_pauses WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
+    },
+
+    /** Everything Nøde holds about a person, for "Download my data". Router keys are never stored, so never included. */
+    async export(cid: string) {
+      await init();
+      const account = await sql.get("SELECT cid, jurisdiction, created_at FROM accounts WHERE cid = ?", cid);
+      const hotspots = await store.myHotspots(cid);
+      const routers = [];
+      for (const h of hotspots) routers.push(...await store.routers(h.id, cid));
+      return {
+        account: account ? { cid: String(account.cid), jurisdiction: String(account.jurisdiction), createdAt: Number(account.created_at) } : null,
+        consentLedger: await store.ledger(cid),
+        hotspots, routers,
+        note: "Anonymous measurements (network quality, venue visits) are never linked to an account, so there are none to include.",
+      };
     },
 
     // ---- hotspots ----
@@ -134,20 +152,24 @@ export function openStore(sql: Sql) {
     },
     async hotspot(hid: string, owner?: string): Promise<Hotspot | null> {
       await init();
-      const r = await sql.get("SELECT * FROM hotspots WHERE id = ?", hid);
+      const r = await sql.get(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id WHERE h.id = ?`, hid);
       if (!r || (owner && r.owner !== owner)) return null;
       return toHotspot(r, Boolean(owner));
     },
     async myHotspots(owner: string): Promise<Hotspot[]> {
       await init();
-      return (await sql.all("SELECT * FROM hotspots WHERE owner = ? ORDER BY updated_at DESC", owner)).map((r) => toHotspot(r, true));
+      return (await sql.all(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id
+        WHERE h.owner = ? ORDER BY h.updated_at DESC`, owner)).map((r) => toHotspot(r, true));
     },
-    async updateHotspot(hid: string, owner: string, patch: { name?: string; active?: boolean; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot | null> {
+    async updateHotspot(hid: string, owner: string, patch: { name?: string; ssid?: string; active?: boolean; pausedUntil?: number | null; limits?: Partial<HostLimits> }, now = Date.now()): Promise<Hotspot | null> {
       const cur = await store.hotspot(hid, owner);
       if (!cur) return null;
       const limits = { ...cur.limits, ...patch.limits, guestIsolation: true as const };
-      await sql.run("UPDATE hotspots SET name = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?",
-        patch.name ?? cur.name, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
+      await sql.run("UPDATE hotspots SET name = ?, ssid = ?, active = ?, limits = ?, updated_at = ? WHERE id = ? AND owner = ?",
+        patch.name ?? cur.name, patch.ssid ?? cur.ssid, (patch.active ?? cur.active) ? 1 : 0, JSON.stringify(limits), now, hid, owner);
+      // Starting or stopping by hand ends a pause; a new pause replaces the old one.
+      if (patch.pausedUntil !== undefined || patch.active !== undefined) await sql.run("DELETE FROM hotspot_pauses WHERE hotspot = ?", hid);
+      if (patch.pausedUntil != null && patch.pausedUntil > now) await sql.run("INSERT INTO hotspot_pauses (hotspot, until) VALUES (?, ?)", hid, patch.pausedUntil);
       return store.hotspot(hid, owner);
     },
     /**
@@ -164,7 +186,8 @@ export function openStore(sql: Sql) {
         const rows = await sql.all(
           `SELECT h.*, (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id) AS n_routers,
                   (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id AND r.last_seen >= ? AND r.state = 'sharing') AS n_live
-             FROM hotspots h WHERE h.active = 1 AND h.area LIKE ? LIMIT 200`, now - ROUTER_LIVE_MS, `${c}%`);
+             FROM hotspots h WHERE h.active = 1 AND h.area LIKE ?
+              AND NOT EXISTS (SELECT 1 FROM hotspot_pauses p WHERE p.hotspot = h.id AND p.until > ?) LIMIT 200`, now - ROUTER_LIVE_MS, `${c}%`, now);
         for (const r of rows) {
           if (seen.has(String(r.id))) continue;
           seen.add(String(r.id));
