@@ -73,11 +73,17 @@ async function renderFind() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
-        out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
-          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong><a href="#/spot/${esc(h.id)}">${esc(h.name)}</a></strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
+        const anyLive = hotspots.some((h) => h.verified) && hotspots.some((h) => !h.verified);
+        out.innerHTML = hotspots.length ? `${anyLive ? `<label class="check"><input type="checkbox" id="liveonly"> ${t("Only show hotspots a router confirmed in the last 20 minutes")}</label>` : ""}<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
+          <li data-live="${h.verified ? 1 : 0}"><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong><a href="#/spot/${esc(h.id)}">${esc(h.name)}</a></strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
           <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button><br>${problemPicker(h.id)}</div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
         if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
+        out.querySelector("#liveonly")?.addEventListener("change", (e) => {
+          const only = e.currentTarget.checked;
+          out.querySelectorAll("li[data-live]").forEach((li) => { li.hidden = only && li.dataset.live !== "1"; });
+          out.querySelectorAll(".radar .pin").forEach((g) => { g.classList.toggle("dim", only && !g.classList.contains("live")); });
+        });
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
         out.querySelectorAll("[data-problem]").forEach((s) => s.addEventListener("change", () => reportProblem(s)));
       } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }

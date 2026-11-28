@@ -157,6 +157,7 @@ const RU = {
   "{n} problem reports": "Сообщений о проблемах: {n}",
   "~{n} sessions": "~{n} сеансов",
   "Busy hours this week, by time of day (hours with fewer than 10 sessions are hidden):": "Загруженность за неделю по времени суток (часы, где меньше 10 сеансов, скрыты):",
+  "Only show hotspots a router confirmed in the last 20 minutes": "Показывать только точки, работу которых роутер подтвердил за последние 20 минут",
   "Print a sign": "Напечатать табличку",
   "Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).": "Скорость у гостей: за 7 дней пока мало замеров (нужно {n} гостей, разрешивших отчёты о качестве).",
   "Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.": "Гости за 7 дней: около {sessions} сеансов, обычная скорость {down} Мбит/с, подключились {ok}%.",
