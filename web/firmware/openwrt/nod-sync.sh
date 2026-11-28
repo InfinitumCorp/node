@@ -66,6 +66,14 @@ else
     logger -t node "sync: guest speed cap now ${max} Mbit/s"
   fi
 
+  # Routers set up before the private-networks rule covered every protocol get the fix.
+  if uci -q get firewall.node_guest_nolan >/dev/null && [ "$(uci -q get firewall.node_guest_nolan.proto || true)" != all ]; then
+    uci set firewall.node_guest_nolan.proto='all'
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1 || true
+    logger -t node "sync: guests are now kept off private networks for every protocol"
+  fi
+
   # Routers set up before fair sharing existed get it on their next sync.
   if [ -f /etc/config/sqm ] && uci -q get sqm.node_guest >/dev/null && [ -z "$(uci -q get sqm.node_guest.eqdisc_opts || true)" ]; then
     uci set sqm.node_guest.qdisc_advanced='1'

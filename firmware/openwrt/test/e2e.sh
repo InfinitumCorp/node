@@ -93,7 +93,9 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   uci set node.settings.api=http://127.0.0.1:8099; uci commit node
   rm -f /tmp/node-updated
   uci -q delete sqm.node_guest.eqdisc_opts; uci -q delete sqm.node_guest.iqdisc_opts; uci commit sqm   # a router set up before fair sharing
+  uci -q delete firewall.node_guest_nolan.proto; uci commit firewall                                     # and before the all-protocols fix
   /usr/sbin/nod-sync
+  want firewall.node_guest_nolan.proto all
   want sqm.node_guest.eqdisc_opts dual-dsthost
   want sqm.node_guest.iqdisc_opts dual-srchost
   want node.settings.active 0
