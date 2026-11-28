@@ -36,7 +36,7 @@ wget -qO /tmp/nod-install.sh https://node-ru.infinitumcorporation.ai/firmware/op
 
 Back in the app, tap **Start sharing**. Within 5 minutes the router turns on the Nøde network and the Host tab shows what it reported: "sharing" or why not, its temperature and the data guests used today.
 
-The app is the switch. If the router can't reach the app it keeps its last settings, and it never turns sharing on by itself.
+The app is the switch. If the router can't reach the app it keeps its last settings, and it never turns sharing on by itself. If you unpair the router or remove the hotspot, the router stops sharing at its next check.
 
 ## Stop
 

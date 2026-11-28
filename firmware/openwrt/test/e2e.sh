@@ -125,6 +125,22 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   cmp -s /usr/sbin/nod-sync /tmp/sync.before || fail "a tampered nod-sync was installed"
   uci set node.settings.active=1; uci set node.settings.hours=''; uci commit node
 
+  echo "== a revoked key stops sharing"
+  revoked=/tmp/revoked; mkdir -p "$revoked/api/router"
+  # A CGI stand-in for the app answering 401, as it does once a router is unpaired or its hotspot deleted.
+  cat > "$revoked/api/router/config" <<'CGI'
+#!/bin/sh
+printf 'Status: 401 Unauthorized\r\nContent-Type: application/json\r\n\r\n{"error":"Unknown router key."}'
+CGI
+  chmod 755 "$revoked/api/router/config"
+  uhttpd -f -p 127.0.0.1:8098 -h "$revoked" -x /api/router & sleep 1
+  uci set node.settings.api=http://127.0.0.1:8098; uci commit node
+  NOD_UPDATE=/nonexistent /usr/sbin/nod-sync
+  want node.settings.active 0
+  want wireless.node_ap_radio0.disabled 1
+  uci set node.settings.api=http://127.0.0.1:8099; uci set node.settings.active=1; uci commit node
+  /usr/sbin/nod-limits
+
   echo "== installer refuses a tampered download, then installs a good one"
   inst="$site/inst/firmware/openwrt"; mkdir -p "$inst"
   cp ./nod-setup.sh ./nod-limits.sh ./nod-sync.sh ./nod-update.sh ./nod-status.sh "$inst/"

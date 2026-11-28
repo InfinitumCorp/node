@@ -9,8 +9,8 @@
 #   uci set node.settings.key='nr_...'; uci commit node
 # Russia: uci set node.settings.api='https://node-ru.infinitumcorporation.ai' (the Nøde mirror).
 #
-# Unpaired, or the server can't be reached: the router keeps its last settings. It never turns
-# sharing on by itself. Needs curl (opkg install curl); jsonfilter is part of OpenWrt.
+# No key, or the server can't be reached: the router keeps its last settings. It never turns
+# sharing on by itself. If the app refuses the key (unpaired, or the hotspot was removed), it stops sharing. Needs curl (opkg install curl); jsonfilter is part of OpenWrt.
 set -u
 
 LIMITS="${NOD_LIMITS:-/usr/sbin/nod-limits}"
@@ -28,7 +28,8 @@ fi
 # The key goes in a header file readable only by root, so it never shows up in a process list or a URL.
 umask 077
 hdr="$(mktemp /tmp/node-auth.XXXXXX)"
-trap 'rm -f "$hdr"' EXIT
+out="$(mktemp /tmp/node-cfg.XXXXXX)"
+trap 'rm -f "$hdr" "$out"' EXIT
 printf 'Authorization: Bearer %s\n' "$key" > "$hdr"
 
 is_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
@@ -38,9 +39,17 @@ set_node() { # set_node <option> <value>
   if [ "$cur" != "$2" ]; then uci set "node.settings.$1=$2"; changed_node=1; fi
 }
 
-cfg="$(curl -fsS --max-time 20 -H @"$hdr" "$api/api/router/config" 2>/dev/null || true)"
-if [ -z "$cfg" ]; then
-  logger -t node "sync: $api unreachable or key refused; keeping last settings"
+code="$(curl -sS --max-time 20 -H @"$hdr" -o "$out" -w '%{http_code}' "$api/api/router/config" 2>/dev/null || true)"
+cfg=""; [ "$code" = 200 ] && cfg="$(cat "$out")"
+if [ "$code" = 401 ]; then
+  # The key was revoked: the router was unpaired or its hotspot removed in the app. Stop sharing
+  # rather than carry on with settings nobody can change any more.
+  if [ "$(uci -q get node.settings.active || true)" != 0 ]; then
+    uci set node.settings.active=0; uci commit node
+    logger -t node "sync: the app no longer knows this router's key (unpaired or hotspot removed); stopped sharing. Pair it again in the Host tab."
+  fi
+elif [ -z "$cfg" ]; then
+  logger -t node "sync: $api unreachable (HTTP ${code:-none}); keeping last settings"
 else
   active="$(echo "$cfg" | jsonfilter -e '@.active' 2>/dev/null || true)"
   max="$(echo "$cfg" | jsonfilter -e '@.limits.maxMbps' 2>/dev/null || true)"
