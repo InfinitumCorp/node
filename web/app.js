@@ -64,7 +64,7 @@ async function renderFind() {
       <p class="muted">${t("Nøde hotspots are run by venues, neighbours and Nøde routers. Join them like any Wi-Fi network.")}</p>
       <div class="row start"><button class="primary" id="locate">${t("Use my location")}</button></div>
       <p class="fine">${t("Your location is used once in your browser to search and isn't stored.")}</p>
-      <div id="results"></div>
+      <div id="results" aria-live="polite"></div>
     </section>`;
   $("#locate").addEventListener("click", () => {
     const out = $("#results");
@@ -427,7 +427,7 @@ async function renderHost() {
         <label class="field"><span>${t("Name people see")}</span><input type="text" name="hname" maxlength="60" required value="${esc(h.name)}"></label>
         <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
       </div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" data-share>${t("Share link")}</button><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine"></div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" data-share>${t("Share link")}</button><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine" aria-live="polite"></div>
       <p class="fine" data-quality></p>
       <p class="fine warn" data-problems hidden></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>

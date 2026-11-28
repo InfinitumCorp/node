@@ -1,10 +1,10 @@
 :root {
   --bg: #f6f7f9; --fg: #0b0f14; --muted: #5b6573; --card: #fff; --line: #e3e6ea;
-  --accent: #00a37a; --accent-fg: #fff; --warn: #b54708; --danger: #c0352b;
+  --accent: #007f5f; --accent-fg: #fff; --warn: #b54708; --danger: #c0352b; --danger-fg: #fff;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --bg: #0b0f14; --fg: #e9edf2; --muted: #9aa5b4; --card: #121821; --line: #233041; --accent: #2bd4a0; --accent-fg: #04140f; }
+  :root:not([data-theme="light"]) { --bg: #0b0f14; --fg: #e9edf2; --muted: #9aa5b4; --card: #121821; --line: #233041; --accent: #2bd4a0; --accent-fg: #04140f; --warn: #f79a5c; --danger: #ff8a7a; --danger-fg: #1a0503; }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
@@ -25,7 +25,7 @@ p { margin: 0 0 10px; }
 .row { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin: 10px 0; }
 button { font: inherit; padding: 10px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; min-height: 44px; }
 button.primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; font-weight: 600; }
-button.stop { background: var(--danger); color: #fff; border-color: transparent; font-weight: 700; }
+button.stop { background: var(--danger); color: var(--danger-fg); border-color: transparent; font-weight: 700; }
 button:disabled { opacity: .55; cursor: default; }
 .list { list-style: none; padding: 0; margin: 0; }
 .list li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); }
@@ -85,3 +85,4 @@ button.link.danger { color: var(--danger); margin-left: auto; }
 .list select[data-problem] { font-size: 13px; padding: 4px 6px; margin-top: 6px; max-width: 100%; width: auto; }
 .presets { gap: 12px; margin: 4px 0 6px; font-size: 13px; }
 details#history { margin-top: 12px; } details#history summary { cursor: pointer; color: var(--accent); }
+:where(a, button, input, select, textarea, summary):focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
