@@ -1,4 +1,5 @@
 // Nøde web app. No framework; renders three views into <main> from the URL hash.
+import { placePins, ringKm } from "./radar.js";
 import { LANGS, apiError, choose, lang, routerState, setup, t } from "./i18n.js";
 import qrcode from "./qrcode.vendor.js";
 
@@ -96,21 +97,16 @@ function radar(me, hotspots) {
     if (text != null) n.textContent = text;
     return n;
   };
-  const maxKm = Math.max(1, ...hotspots.map((h) => h.distanceKm));
-  const ring = maxKm <= 1 ? 1 : maxKm <= 2 ? 2 : maxKm <= 5 ? 5 : Math.ceil(maxKm);
+  const ring = ringKm(hotspots.map((h) => h.distanceKm));
   const svg = el("svg", { viewBox: "0 0 320 320", class: "radar", role: "img",
     "aria-label": t("Map of {n} hotspots around you, up to {km} km", { n: hotspots.length, km: ring.toLocaleString(lang) }) });
   for (const f of [1 / 3, 2 / 3, 1]) svg.append(el("circle", { cx: C, cy: C, r: R * f, class: "ring" }));
   svg.append(el("text", { x: C + 4, y: C - R + 12, class: "ring-label" }, t("{km} km", { km: ring.toLocaleString(lang) })));
   for (const [x, y, d] of [[C, 12, "N"], [312, C + 4, "E"], [C, 316, "S"], [8, C + 4, "W"]]) svg.append(el("text", { x, y, class: "compass", "text-anchor": "middle" }, t(d)));
   svg.append(el("circle", { cx: C, cy: C, r: 6, class: "me" }));
-  const rad = Math.PI / 180;
+  const pins = placePins(me, hotspots, R);
   hotspots.forEach((h, i) => {
-    const dy = (h.lat - me.latitude) * 111.32;
-    const dx = (h.lng - me.longitude) * 111.32 * Math.cos(me.latitude * rad);
-    const d = Math.hypot(dx, dy) || 1e-9;
-    const r = Math.min(R, (Math.min(h.distanceKm, ring) / ring) * R);
-    const x = C + (dx / d) * r, y = C - (dy / d) * r;
+    const x = C + pins[i].x, y = C + pins[i].y;
     const g = el("g", { class: h.verified ? "pin live" : "pin" });
     g.append(el("title", {}, h.name), el("circle", { cx: x, cy: y, r: 10 }), el("text", { x, y: y + 4, "text-anchor": "middle" }, i + 1));
     svg.append(g);
