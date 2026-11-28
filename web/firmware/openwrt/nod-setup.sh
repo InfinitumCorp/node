@@ -134,6 +134,7 @@ uci set firewall.node_guest_nolan=rule
 uci set firewall.node_guest_nolan.name='Nøde guest no private nets'
 uci set firewall.node_guest_nolan.src='guest'
 uci set firewall.node_guest_nolan.dest='*'
+uci set firewall.node_guest_nolan.proto='all'   # not just TCP/UDP: no pinging the modem either
 uci add_list firewall.node_guest_nolan.dest_ip='192.168.0.0/16'
 uci add_list firewall.node_guest_nolan.dest_ip='172.16.0.0/12'
 uci add_list firewall.node_guest_nolan.dest_ip='10.0.0.0/8'

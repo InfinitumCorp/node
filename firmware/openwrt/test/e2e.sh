@@ -48,16 +48,13 @@ for b in nod-limits nod-sync nod-update nod-status; do [ -x "/usr/sbin/$b" ] || 
 [ "$(stat -c %a /etc/config/node 2>/dev/null || echo 600)" = 600 ] || fail "/etc/config/node must be 600"
 
 echo "== firewall compiles (fw4)"
-if command -v fw4 >/dev/null 2>&1; then
-  if fw4 -q print > /tmp/fw.nft 2>/tmp/fw.err; then
-    grep -q 'guest' /tmp/fw.nft || fail "fw4 ruleset has no guest zone"
-    grep -E 'Nøde guest no private nets|10\.0\.0\.0/8' /tmp/fw.nft | head -3
-  else
-    echo "(fw4 print couldn't run here: $(head -c 300 /tmp/fw.err))"
-  fi
-else
-  echo "(no fw4 in this image)"
-fi
+command -v fw4 >/dev/null 2>&1 || fail "no fw4 in the image"
+fw4 -q print > /tmp/fw.nft 2>/tmp/fw.err || fail "fw4 can't compile the ruleset: $(head -c 300 /tmp/fw.err)"
+rule="$(grep 'Nøde guest no private nets' /tmp/fw.nft)"
+[ -n "$rule" ] || fail "no private-nets rule in the ruleset"
+echo "$rule"
+! echo "$rule" | grep -q 'l4proto' || fail "the private-nets rule must cover every protocol, not just TCP/UDP"
+grep -q 'jump forward_guest' /tmp/fw.nft || fail "no guest forward chain"
 
 echo "== limits: stopped by host"
 /usr/sbin/nod-limits
