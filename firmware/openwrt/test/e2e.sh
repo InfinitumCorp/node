@@ -87,6 +87,7 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   printf '%s' '{"hotspot":"hs_e2e","name":"E2E","ssid":"Nøde Café","active":false,"limits":{"maxMbps":25,"dailyMb":900,"hours":[8,9,10],"maxTempC":42},"poll":300}' > "$site/api/router/config"
   # The site serves new scripts: a nod-limits that marks itself, and the rest as they are.
   cp ./nod-sync.sh ./nod-update.sh ./nod-status.sh "$site/firmware/openwrt/"
+  printf '%s' '{"ok":true}' > "$site/healthz"
   { cat ./nod-limits.sh; echo '# e2e-updated'; } > "$site/firmware/openwrt/nod-limits.sh"
   (cd "$site/firmware/openwrt" && sha256sum nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh > SHA256SUMS)
   uhttpd -f -p 127.0.0.1:8099 -h "$site" & sleep 1
@@ -119,6 +120,7 @@ echo "== status"
 /usr/sbin/nod-status > /tmp/status.txt
 grep -q "paired:          yes" /tmp/status.txt || fail "status should say paired"
 ! grep -q nr_e2etestkey /tmp/status.txt || fail "status must not print the key"
+if command -v curl >/dev/null 2>&1; then grep -q "App reachable:     yes" /tmp/status.txt || fail "status should reach the stand-in app"; fi
 cat /tmp/status.txt
 
 echo "== setup again keeps the key"

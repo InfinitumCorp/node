@@ -35,7 +35,13 @@ for iface in $(uci show wireless 2>/dev/null | sed -n "s/^wireless\.\(node_ap_[^
 done
 echo "Guest Wi-Fi:       $( [ "$up" -gt 0 ] && echo "on ($up radio(s), network \"$(uci -q get wireless.node_ap_radio0.ssid 2>/dev/null || echo Nøde)\")" || echo off )"
 grep -q nod-sync /etc/crontabs/root 2>/dev/null && echo "Schedule:          nod-sync every 5 minutes" || echo "Schedule:          missing; re-run nod-setup"
-command -v curl >/dev/null 2>&1 || echo "Warning:           curl is missing, so the router can't reach the app (opkg update && opkg install curl)"
+if command -v curl >/dev/null 2>&1; then
+  api="$(get api)"; api="${api:-https://node.infinitumcorporation.ai}"
+  if curl -fsS --max-time 10 "${api%/}/healthz" >/dev/null 2>&1; then echo "App reachable:     yes"
+  else echo "App reachable:     no (check the internet link, or in Russia use https://node-ru.infinitumcorporation.ai)"; fi
+else
+  echo "Warning:           curl is missing, so the router can't reach the app (opkg update && opkg install curl)"
+fi
 
 echo "Recent log"
 logread -e node 2>/dev/null | tail -n 8 | sed 's/^/  /' || echo "  (no log)"
