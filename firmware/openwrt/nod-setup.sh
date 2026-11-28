@@ -138,6 +138,7 @@ for svc in dns:53:udp dhcp:67:udp; do
   uci set "firewall.node_guest_$name.proto=$proto"
   uci set "firewall.node_guest_$name.target=ACCEPT"
 done
+uci set firewall.node_guest_dns.proto='tcp udp'   # DNS falls back to TCP for large answers (DNSSEC)
 # Block guests from private ranges the host uses (belt and braces on top of the zone).
 uci -q delete firewall.node_guest_nolan || true
 uci set firewall.node_guest_nolan=rule

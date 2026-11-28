@@ -48,6 +48,8 @@ want network.guest.ipaddr 10.77.0.1
 want firewall.node_guest.forward REJECT
 want firewall.node_guest_wan.dest wan
 want firewall.node_guest_nolan.target REJECT
+want firewall.node_guest_dns.proto "tcp udp"
+want firewall.node_guest_dhcp.proto udp
 want sqm.node_guest.download 12000
 want sqm.node_guest.eqdisc_opts dual-dsthost
 grep -q '^\*/5 \* \* \* \* /usr/sbin/nod-sync$' /etc/crontabs/root || fail "cron line missing"
@@ -63,6 +65,7 @@ rule="$(grep 'Nøde guest no private nets' /tmp/fw.nft)"
 echo "$rule"
 ! echo "$rule" | grep -q 'l4proto' || fail "the private-nets rule must cover every protocol, not just TCP/UDP"
 grep -q 'chain forward_guest' /tmp/fw.nft || fail "no guest forward chain"
+grep 'Nøde guest dns' /tmp/fw.nft | grep -q tcp || fail "guest DNS must be allowed over TCP: $(grep 'Nøde guest dns' /tmp/fw.nft)"
 
 echo "== limits: stopped by host"
 /usr/sbin/nod-limits
@@ -115,8 +118,10 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   rm -f /tmp/node-updated
   uci -q delete sqm.node_guest.eqdisc_opts; uci -q delete sqm.node_guest.iqdisc_opts; uci commit sqm   # a router set up before fair sharing
   uci -q delete firewall.node_guest_nolan.proto; uci commit firewall                                     # and before the all-protocols fix
+  uci set firewall.node_guest_dns.proto=udp; uci commit firewall                                         # and before DNS over TCP
   /usr/sbin/nod-sync
   want firewall.node_guest_nolan.proto all
+  want firewall.node_guest_dns.proto "tcp udp"
   want sqm.node_guest.eqdisc_opts dual-dsthost
   want sqm.node_guest.iqdisc_opts dual-srchost
   want node.settings.active 0

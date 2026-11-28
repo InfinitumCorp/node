@@ -83,6 +83,14 @@ else
     logger -t node "sync: guests are now kept off private networks for every protocol"
   fi
 
+  # Routers set up before guest DNS allowed TCP (large answers fall back to it).
+  if uci -q get firewall.node_guest_dns >/dev/null && [ "$(uci -q get firewall.node_guest_dns.proto || true)" = udp ]; then
+    uci set firewall.node_guest_dns.proto='tcp udp'
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1 || true
+    logger -t node "sync: guests' DNS now works over TCP too"
+  fi
+
   # Routers set up before fair sharing existed get it on their next sync.
   if [ -f /etc/config/sqm ] && uci -q get sqm.node_guest >/dev/null && [ -z "$(uci -q get sqm.node_guest.eqdisc_opts || true)" ]; then
     uci set sqm.node_guest.qdisc_advanced='1'
