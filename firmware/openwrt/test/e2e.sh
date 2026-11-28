@@ -80,6 +80,9 @@ uci set node.settings.daily_mb=0; uci commit node
 /usr/sbin/nod-limits
 [ "$(sed -n 1p /tmp/node-state)" = "daily limit reached" ] || fail "state: $(sed -n 1p /tmp/node-state)"
 want wireless.node_ap_radio0.disabled 1
+uci set node.settings.daily_mb=lots; uci commit node
+/usr/sbin/nod-limits || fail "nod-limits broke on a non-numeric daily_mb"
+[ "$(sed -n 1p /tmp/node-state)" = sharing ] || fail "state with a bad daily_mb: $(sed -n 1p /tmp/node-state)"
 uci set node.settings.daily_mb=500; uci commit node
 /usr/sbin/nod-limits
 want wireless.node_ap_radio0.disabled 0

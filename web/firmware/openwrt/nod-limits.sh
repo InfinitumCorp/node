@@ -9,6 +9,8 @@ set -eu
 active="$(uci -q get node.settings.active || echo 0)"
 hours="$(uci -q get node.settings.hours || echo '')"
 daily_mb="$(uci -q get node.settings.daily_mb || echo 2048)"
+# A hand-edited setting that isn't a whole number falls back to the default instead of breaking the checks.
+case "$daily_mb" in ''|*[!0-9]*) logger -t node "daily_mb '$daily_mb' isn't a number; using 2048"; daily_mb=2048 ;; esac
 state=/tmp/node-usage
 today="$(date +%Y-%m-%d)"
 hour="$(date +%H | sed 's/^0//')"
@@ -29,7 +31,9 @@ if [ -n "$hours" ] && ! echo " $hours " | grep -q " $hour "; then want=0; reason
 hottest=""
 for z in /sys/class/thermal/thermal_zone*/temp; do
   [ -f "$z" ] || continue
-  t=$(( $(cat "$z") / 1000 ))
+  raw="$(cat "$z" 2>/dev/null || true)"
+  case "$raw" in ''|*[!0-9-]*) continue ;; esac
+  t=$(( raw / 1000 ))
   if [ -z "$hottest" ] || [ "$t" -gt "$hottest" ]; then hottest=$t; fi
   [ "$t" -lt 85 ] || { want=0; reason="${reason:-too hot (${t}°C)}"; }
 done

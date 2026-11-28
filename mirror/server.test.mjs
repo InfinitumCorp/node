@@ -59,3 +59,18 @@ test("the per-client tag is opaque, stable and only sent when a secret is set", 
   assert.equal(h["x-forwarded-for"], undefined);
   assert.equal(upstreamHeaders({ "x-node-mirror-client": "forged.tag" })["x-node-mirror-client"], undefined);
 });
+
+test("the mirror's own health check answers even when the upstream is down", async () => {
+  const mirror = createServer(createHandler("http://127.0.0.1:9"));
+  await new Promise((r) => mirror.listen(0, r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${mirror.address().port}/__mirror/health`);
+    assert.equal(r.status, 200);
+    assert.equal(await r.text(), "ok");
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    const down = await fetch(`http://127.0.0.1:${mirror.address().port}/healthz`);
+    assert.ok(down.status >= 500, `upstream down should be a 5xx, got ${down.status}`);
+  } finally {
+    mirror.close();
+  }
+});
