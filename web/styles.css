@@ -72,3 +72,12 @@ a.button { display: inline-flex; align-items: center; font: inherit; padding: 10
 .row.end { justify-content: flex-end; margin: 0; }
 select[data-pause] { min-height: 44px; }
 select[data-pause] { width: auto; }
+.radar-box { display: flex; justify-content: center; margin: 8px 0; }
+.radar { width: 100%; max-width: 320px; height: auto; }
+.radar .ring { fill: none; stroke: var(--line); stroke-width: 1; }
+.radar .ring-label, .radar .compass { fill: var(--muted); font-size: 11px; }
+.radar .me { fill: var(--fg); }
+.radar .pin circle { fill: var(--card); stroke: var(--muted); stroke-width: 2; }
+.radar .pin.live circle { stroke: var(--accent); }
+.radar .pin text { fill: var(--fg); font-size: 11px; font-weight: 700; }
+.pin-no { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--muted); font-size: 11px; font-weight: 700; }

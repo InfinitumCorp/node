@@ -66,14 +66,49 @@ async function renderFind() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
-        out.innerHTML = hotspots.length ? `<ul class="list">${hotspots.map((h) => `
-          <li><div><strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
+        out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
+          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
           <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button></div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
+        if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
       } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
     }, () => { out.innerHTML = `<p class="error">${t("Location wasn't shared. You can still join any network named “Nøde”.")}</p>`; }, { maximumAge: 300000, timeout: 15000 });
   });
+}
+
+/**
+ * Where the hotspots are from you: direction and distance on rings, drawn here with no map tiles,
+ * so your location never leaves the page. Hotspot positions are the ~150 m cells the API gives.
+ */
+function radar(me, hotspots) {
+  const ns = "http://www.w3.org/2000/svg", R = 140, C = 160;
+  const el = (name, attrs, text) => {
+    const n = document.createElementNS(ns, name);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    if (text != null) n.textContent = text;
+    return n;
+  };
+  const maxKm = Math.max(1, ...hotspots.map((h) => h.distanceKm));
+  const ring = maxKm <= 1 ? 1 : maxKm <= 2 ? 2 : maxKm <= 5 ? 5 : Math.ceil(maxKm);
+  const svg = el("svg", { viewBox: "0 0 320 320", class: "radar", role: "img",
+    "aria-label": t("Map of {n} hotspots around you, up to {km} km", { n: hotspots.length, km: ring.toLocaleString(lang) }) });
+  for (const f of [1 / 3, 2 / 3, 1]) svg.append(el("circle", { cx: C, cy: C, r: R * f, class: "ring" }));
+  svg.append(el("text", { x: C + 4, y: C - R + 12, class: "ring-label" }, t("{km} km", { km: ring.toLocaleString(lang) })));
+  for (const [x, y, d] of [[C, 12, "N"], [312, C + 4, "E"], [C, 316, "S"], [8, C + 4, "W"]]) svg.append(el("text", { x, y, class: "compass", "text-anchor": "middle" }, t(d)));
+  svg.append(el("circle", { cx: C, cy: C, r: 6, class: "me" }));
+  const rad = Math.PI / 180;
+  hotspots.forEach((h, i) => {
+    const dy = (h.lat - me.latitude) * 111.32;
+    const dx = (h.lng - me.longitude) * 111.32 * Math.cos(me.latitude * rad);
+    const d = Math.hypot(dx, dy) || 1e-9;
+    const r = Math.min(R, (Math.min(h.distanceKm, ring) / ring) * R);
+    const x = C + (dx / d) * r, y = C - (dy / d) * r;
+    const g = el("g", { class: h.verified ? "pin live" : "pin" });
+    g.append(el("title", {}, h.name), el("circle", { cx: x, cy: y, r: 10 }), el("text", { x, y: y + 4, "text-anchor": "middle" }, i + 1));
+    svg.append(g);
+  });
+  return svg;
 }
 
 /** Counts a visit and, if you chose network quality reports, measures latency and download speed. */
