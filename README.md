@@ -85,7 +85,7 @@ Pair a Nøde router in the app (Host → your hotspot → Pair a router). The ke
 uci set node.settings.key='nr_...'; uci commit node; nod-sync
 ```
 
-Every 5 minutes `nod-sync` (cron, installed by `nod-setup.sh`) fetches `GET /api/router/config` with `Authorization: Bearer <key>`, applies the start/stop switch, speed cap, daily data cap, hours and network name, runs `nod-limits`, then posts `{state, tempC, usedMb}` to `/api/router/status`. The Host tab shows what each router last reported. Only the host's own totals are sent, never anything about guests. The server stores a SHA-256 hash of the key, not the key. Unreachable server: the router keeps its last settings. In Russia set `uci set node.settings.api='https://node-ru.infinitumcorporation.ai'`.
+Every 5 minutes `nod-sync` (cron, installed by `nod-setup.sh`) fetches `GET /api/router/config` with `Authorization: Bearer <key>`, applies the start/stop switch, speed cap, daily data cap, hours and network name, runs `nod-limits`, then posts `{state, tempC, usedMb}` to `/api/router/status`. The Host tab shows what each router last reported. Only the host's own totals are sent, never anything about guests. The server stores a SHA-256 hash of the key, not the key. Unreachable server: the router keeps its last settings. In Russia set `uci set node.settings.api='https://node-ru.infinitumcorporation.ai'`. About once a day a paired router runs `nod-update`, which installs newer scripts from the same site only if they match `SHA256SUMS` and parse; `uci set node.settings.autoupdate=0` turns that off.
 
 ## Not built yet
 
