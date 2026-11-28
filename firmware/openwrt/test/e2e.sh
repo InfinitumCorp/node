@@ -83,7 +83,10 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   uhttpd -f -p 127.0.0.1:8099 -h "$site" & sleep 1
   uci set node.settings.api=http://127.0.0.1:8099; uci commit node
   rm -f /tmp/node-updated
+  uci -q delete sqm.node_guest.eqdisc_opts; uci -q delete sqm.node_guest.iqdisc_opts; uci commit sqm   # a router set up before fair sharing
   /usr/sbin/nod-sync
+  want sqm.node_guest.eqdisc_opts dual-dsthost
+  want sqm.node_guest.iqdisc_opts dual-srchost
   want node.settings.active 0
   want node.settings.max_mbps 25
   want node.settings.daily_mb 900
@@ -124,5 +127,28 @@ want wireless.default_radio0.ssid HomeNet
 [ ! -e /etc/config/node ] || fail "/etc/config/node should be removed"
 ! grep -q nod- /etc/crontabs/root || fail "cron line should be removed"
 for b in nod-limits nod-sync nod-update nod-status; do [ ! -e "/usr/sbin/$b" ] || fail "/usr/sbin/$b should be removed"; done
+
+echo "== mesh: relay and gateway"
+uci set wireless.radio1=wifi-device; uci set wireless.radio1.type=mac80211; uci commit wireless
+MESH=1 ROLE=relay sh ./nod-setup.sh 2>/dev/null && fail "a relay without MESH_KEY should be refused" || true
+MK=meshkey-meshkey-meshkey-meshkey-0001
+MESH=1 MESH_KEY=$MK ROLE=relay sh ./nod-setup.sh
+want wireless.node_mesh_radio0.mode mesh
+want wireless.node_mesh_radio0.encryption sae
+want wireless.node_mesh_radio0.key "$MK"
+want wireless.node_mesh_radio1.mesh_id nodemesh
+want wireless.node_ap_radio1.ssid "Nøde"
+want network.guest.proto none
+want dhcp.guest.ignore 1
+gone firewall.node_guest_wan
+MESH=1 MESH_KEY=$MK ROLE=gateway sh ./nod-setup.sh
+want network.guest.proto static
+want network.guest.ipaddr 10.77.0.1
+want firewall.node_guest_wan.dest wan
+gone dhcp.guest.ignore
+sh ./nod-uninstall.sh
+gone wireless.node_mesh_radio0
+gone wireless.node_mesh_radio1
+gone wireless.node_ap_radio1
 
 echo "ALL OK"

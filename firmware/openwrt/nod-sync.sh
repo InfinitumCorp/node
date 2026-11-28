@@ -66,6 +66,17 @@ else
     logger -t node "sync: guest speed cap now ${max} Mbit/s"
   fi
 
+  # Routers set up before fair sharing existed get it on their next sync.
+  if [ -f /etc/config/sqm ] && uci -q get sqm.node_guest >/dev/null && [ -z "$(uci -q get sqm.node_guest.eqdisc_opts || true)" ]; then
+    uci set sqm.node_guest.qdisc_advanced='1'
+    uci set sqm.node_guest.qdisc_really_really_advanced='1'
+    uci set sqm.node_guest.eqdisc_opts='dual-dsthost'
+    uci set sqm.node_guest.iqdisc_opts='dual-srchost'
+    uci commit sqm
+    [ -x /etc/init.d/sqm ] && /etc/init.d/sqm reload || true
+    logger -t node "sync: guests now share the speed cap fairly"
+  fi
+
   if [ -n "$ssid" ] && [ "${#ssid}" -le 32 ]; then
     changed_ssid=0
     for iface in $(uci show wireless | sed -n "s/^wireless\.\(node_ap_[^.=]*\)=wifi-iface$/\1/p"); do
