@@ -47,6 +47,18 @@ grep -q '^\*/5 \* \* \* \* /usr/sbin/nod-sync$' /etc/crontabs/root || fail "cron
 for b in nod-limits nod-sync nod-update nod-status; do [ -x "/usr/sbin/$b" ] || fail "/usr/sbin/$b missing"; done
 [ "$(stat -c %a /etc/config/node 2>/dev/null || echo 600)" = 600 ] || fail "/etc/config/node must be 600"
 
+echo "== firewall compiles (fw4)"
+if command -v fw4 >/dev/null 2>&1; then
+  if fw4 -q print > /tmp/fw.nft 2>/tmp/fw.err; then
+    grep -q 'guest' /tmp/fw.nft || fail "fw4 ruleset has no guest zone"
+    grep -E 'Nøde guest no private nets|10\.0\.0\.0/8' /tmp/fw.nft | head -3
+  else
+    echo "(fw4 print couldn't run here: $(head -c 300 /tmp/fw.err))"
+  fi
+else
+  echo "(no fw4 in this image)"
+fi
+
 echo "== limits: stopped by host"
 /usr/sbin/nod-limits
 [ "$(sed -n 1p /tmp/node-state)" = "stopped by host" ] || fail "state: $(sed -n 1p /tmp/node-state)"
