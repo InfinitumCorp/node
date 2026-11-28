@@ -72,7 +72,7 @@ NOD_UPDATE=/nonexistent /usr/sbin/nod-sync
 want node.settings.active 1
 [ "$(sed -n 1p /tmp/node-state)" = sharing ] || fail "state after sync: $(sed -n 1p /tmp/node-state)"
 
-echo "== sync and update against a stand-in Nøde site (busybox httpd)"
+echo "== sync and update against a stand-in Nøde site (uhttpd)"
 if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg install curl >/dev/null 2>&1; }; then
   site=/tmp/site; mkdir -p "$site/api/router" "$site/firmware/openwrt"
   printf '%s' '{"hotspot":"hs_e2e","name":"E2E","ssid":"Nøde Café","active":false,"limits":{"maxMbps":25,"dailyMb":900,"hours":[8,9,10],"maxTempC":42},"poll":300}' > "$site/api/router/config"
@@ -80,7 +80,7 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   cp ./nod-sync.sh ./nod-update.sh ./nod-status.sh "$site/firmware/openwrt/"
   { cat ./nod-limits.sh; echo '# e2e-updated'; } > "$site/firmware/openwrt/nod-limits.sh"
   (cd "$site/firmware/openwrt" && sha256sum nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh > SHA256SUMS)
-  httpd -p 127.0.0.1:8099 -h "$site"
+  uhttpd -f -p 127.0.0.1:8099 -h "$site" & sleep 1
   uci set node.settings.api=http://127.0.0.1:8099; uci commit node
   rm -f /tmp/node-updated
   /usr/sbin/nod-sync
