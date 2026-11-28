@@ -106,7 +106,7 @@ fi
 "$LIMITS" || true
 
 # Report what nod-limits decided. Only the host's own figures: no guest devices, no addresses.
-if [ -f "$STATE" ]; then
+if [ -f "$STATE" ] && [ "$code" != 401 ]; then
   # Quotes, backslashes and control characters would break the JSON below.
   state="$(sed -n 1p "$STATE" | tr -d '"\\' | tr -d '[:cntrl:]' | cut -c1-60)"
   temp="$(sed -n 2p "$STATE")"
