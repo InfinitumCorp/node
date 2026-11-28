@@ -54,3 +54,22 @@ test("a paired router that checks in too often gets 429, other routers don't", a
   assert.equal((await call("GET", "/api/router/config", undefined, b.key)).status, 200);
   assert.equal((await call("GET", "/api/router/config", undefined, "nr_wrongwrongwrongwrongwrong")).status, 401);
 });
+
+test("through the mirror a signed per-client id stands in for the address; forged ones are ignored", async () => {
+  // @ts-ignore: plain ESM
+  const { clientTag } = await import("../mirror/server.mjs");
+  const secret = "test-mirror-secret-0123456789abcdef";
+  const ip = counter(1), hotspot = counter(100);
+  const app = createApp({ store: openStore(nodeSqlite()), env: { NODE_MIRROR_SECRET: secret }, verify: async () => null, limits: { ip, hotspot } });
+  const send = async (tag: string) => (await app(post({ kind: "visit", hotspot: "hs_one", session: "s" }, { "x-node-mirror": "ru", "x-node-mirror-client": tag })))!.status;
+
+  const tag = clientTag("198.51.100.7", secret);
+  assert.equal(await send(tag), 404);
+  assert.equal(await send(tag), 429, "the same phone is limited");
+  assert.equal(await send(clientTag("198.51.100.8", secret)), 404, "another phone has its own budget");
+  const forged = clientTag("198.51.100.9", "not-the-secret");
+  const before = ip.keys.length;
+  assert.equal(await send(forged), 404);
+  assert.equal(ip.keys.length, before, "a forged tag is not used as a key");
+  assert.ok(ip.keys.every((k) => k.startsWith("ip:ru:") && !k.includes("198.51")), "addresses never reach Nøde");
+});

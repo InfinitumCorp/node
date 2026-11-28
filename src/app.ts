@@ -124,6 +124,20 @@ function km(a: number, b: number, c: number, d: number) {
   return 6371 * 2 * Math.asin(Math.sqrt(x));
 }
 
+const b64url = (b: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** Checks the mirror's `<id>.<sig>` tag (mirror/server.mjs clientTag) and returns a limiter key, or "". */
+export async function mirrorClient(tag: string | null, secret: string): Promise<string> {
+  if (!tag || !secret) return "";
+  const m = /^([A-Za-z0-9_-]{22})\.([A-Za-z0-9_-]{22})$/.exec(tag);
+  if (!m) return "";
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const want = b64url(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(`sig:${m[1]}`))).slice(0, 22);
+  let diff = 0;
+  for (let i = 0; i < 22; i++) diff |= want.charCodeAt(i) ^ m[2]!.charCodeAt(i);
+  return diff === 0 ? `ru:${m[1]}` : "";
+}
+
 export function createApp(opts: Options) {
   const env = opts.env ?? {};
   const store = opts.store;
@@ -188,7 +202,10 @@ export function createApp(opts: Options) {
       const b = await body(req);
       const hotspot = text(b.hotspot, 64, "hotspot");
       const session = text(b.session, 128, "session");
-      const ip = req.headers.get("x-node-mirror") ? "" : req.headers.get("cf-connecting-ip") ?? "";
+      // Through the mirror the address is hidden; a signed per-client id from the mirror stands in for it.
+      const ip = req.headers.get("x-node-mirror")
+        ? await mirrorClient(req.headers.get("x-node-mirror-client"), str("NODE_MIRROR_SECRET"))
+        : req.headers.get("cf-connecting-ip") ?? "";
       const allowed = (await Promise.all([
         ip && opts.limits?.ip ? opts.limits.ip(`ip:${ip}`) : true,
         opts.limits?.hotspot ? opts.limits.hotspot(`hs:${hotspot}`) : true,
