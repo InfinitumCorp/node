@@ -10,6 +10,7 @@ Not legal advice. Each market needs its own assessment before launch.
 4. **Identity and analytics never join.** No analytics table has an account column. Sessions are random, rotate daily and are hashed on arrival.
 5. **Coarse and aggregated.** ~5 km areas, 1-hour windows, groups under 10 suppressed, counts rounded to 5. Hotspot locations stored to ~150 m.
 6. **Erasure.** `DELETE /api/me` removes the account, ledger and hotspots.
+7. **Retention.** Anonymous analytics (`quality_samples`, `venue_sessions`) are deleted 100 days after their hour, and reports cover at most 92 days. Problem reports and routers' daily reports (`problem_reports`, `router_days`) are kept 35 days. The tokens that stop a guest reporting the same problem twice (`problem_seen`) are cleared daily. Routers send only the host's own totals (state, temperature, guest MB), never anything about guests.
 
 ## Never collected or sold
 
