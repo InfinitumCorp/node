@@ -398,7 +398,7 @@ async function renderHost() {
   const anyActive = hotspots.some((h) => h.active);
   view.innerHTML = `
     ${anyActive ? `<section class="card center"><button class="stop" id="stopall">${t("Stop sharing now")}</button><p class="fine">${t("Stops every hotspot you run, immediately.")}</p></section>` : ""}
-    <section class="card"><h2>${t("Your hotspots")}</h2>${await batteryNote()}
+    <section class="card"><h2>${t("Your hotspots")}</h2><p class="muted" id="week" aria-live="polite"></p>${await batteryNote()}
       ${hotspots.length ? "" : `<p class="muted">${t("None yet. Add your home router, venue Wi-Fi or a Nøde device below.")}</p>`}
       <div id="spots"></div></section>
     <section class="card"><h3>${t("Add a hotspot")}</h3>
@@ -418,6 +418,16 @@ async function renderHost() {
     <section class="card"><h3>${t("Stop hosting entirely")}</h3><p class="muted">${t("Turns off sharing and every hotspot.")}</p><button id="optout">${t("Stop hosting")}</button></section>`;
 
   const spots = $("#spots");
+  api("GET", "/api/me/summary").then((s) => {
+    if (!s.hotspots) return;
+    const gb = s.sharedMb >= 1000 ? t("{n} GB", { n: (s.sharedMb / 1024).toLocaleString(lang, { maximumFractionDigits: 1 }) }) : t("{n} MB", { n: s.sharedMb });
+    $("#week").textContent = [
+      t("{sharing} of {total} sharing now", { sharing: s.sharing, total: s.hotspots }),
+      s.liveRouters ? t("{n} routers live", { n: s.liveRouters }) : null,
+      s.sharedMb ? t("{data} shared with guests this week", { data: gb }) : null,
+      s.problems ? t("{n} problem reports", { n: s.problems }) : null,
+    ].filter(Boolean).join(" · ");
+  }).catch(() => {});
   for (const h of hotspots) {
     const el = document.createElement("form");
     el.className = "card";

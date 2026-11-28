@@ -17,6 +17,7 @@ import { HOTSPOT_KINDS, PROBLEMS, type HostLimits, type HotspotKind, type Proble
  *   GET  /api/me/export                   (CID) everything Nøde holds about me, as a JSON download
  *   DELETE /api/me                        (CID) erase account, ledger and hotspots
  *   GET  /api/me/hotspots                 (CID) my hotspots
+ *   GET  /api/me/summary                  (CID) my week as a host: hotspots sharing, live routers, guest data, problem reports
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
  *   PATCH /api/me/hotspots/:id            (CID) name, ssid, active (the stop button), pausedUntil, limits
  *   DELETE /api/me/hotspots/:id           (CID) remove a hotspot, its routers and their history
@@ -312,6 +313,7 @@ export function createApp(opts: Options) {
         return json(200, { jurisdiction: j.code, consent: currentConsent(await store.ledger(p.cid), j) });
       }
       if (path === "/api/me/hotspots" && m === "GET") return json(200, { hotspots: await store.myHotspots(p.cid) });
+      if (path === "/api/me/summary" && m === "GET") return json(200, await store.hostSummary(p.cid, now()));
       if (path === "/api/me/hotspots" && m === "POST") {
         const acct = await store.ensureAccount(p.cid, undefined, now());
         if (!currentConsent(await store.ledger(p.cid), jurisdiction(acct.jurisdiction)).host_bandwidth.granted) {

@@ -201,6 +201,23 @@ export function openStore(sql: Sql) {
         pausedUntil: r.paused_until == null ? null : Number(r.paused_until),
       };
     },
+    /** A host's week at a glance, across all their hotspots. */
+    async hostSummary(owner: string, now = Date.now()) {
+      await init();
+      const since = now - 7 * 86_400_000;
+      const hs = await store.myHotspots(owner);
+      const used = await sql.get<{ mb: number | null }>(
+        "SELECT SUM(d.used_mb) AS mb FROM router_days d JOIN routers r ON r.id = d.router WHERE r.owner = ? AND d.last_at >= ?", owner, since);
+      const live = await sql.get<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM routers WHERE owner = ? AND last_seen >= ? AND state = 'sharing'", owner, now - ROUTER_LIVE_MS);
+      let problems = 0;
+      for (const h of hs) for (const n of Object.values(await store.hotspotProblems(h.id, since))) problems += n;
+      return {
+        days: 7, hotspots: hs.length,
+        sharing: hs.filter((h) => h.active && !(h.pausedUntil && h.pausedUntil > now)).length,
+        liveRouters: Number(live?.n ?? 0), sharedMb: Math.round(Number(used?.mb ?? 0)), problems,
+      };
+    },
     async myHotspots(owner: string): Promise<Hotspot[]> {
       await init();
       return (await sql.all(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id
