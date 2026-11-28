@@ -17,7 +17,7 @@ Free community Wi-Fi: fixed gateways at venues and homes, extended by Nøde rout
 | `src/store.ts` | Identity tables and analytics tables that never join |
 | `src/cid.ts` | Cumulus ID token verification (copied from `architect`) |
 | `web/` | The Nøde web app (installable PWA): find Wi-Fi, your data choices, host controls |
-| `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps, schedule and daily limit |
+| `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps shared fairly between guests, schedule and daily limit |
 | `web/openapi.json` | OpenAPI 3.1 description of the API (served at `/openapi.json`; a test checks it covers every route) |
 | `docs/` | [Hosting guide](docs/HOSTING.md) ([по-русски](docs/HOSTING.ru.md)), [data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
 

@@ -8,7 +8,8 @@
 #    firewall drops guest -> LAN, so they can never reach the host's devices.
 #  - 802.11s mesh backhaul "nodemesh" (SAE-encrypted) between Nøde routers; phones never join the mesh,
 #    they join the guest AP. Relays and gateways extend coverage over the mesh.
-#  - SQM caps on guest traffic from /etc/config/node (max_mbps), so the host's own use comes first.
+#  - SQM caps on guest traffic from /etc/config/node (max_mbps), so the host's own use comes first,
+#    shared fairly between guests' devices so one can't take it all.
 #  - A daily data cap and schedule are enforced by nod-limits.sh (installed to cron).
 #
 #  - Paired routers fetch newer, checksum-verified Nøde scripts about once a day (nod-update.sh;
@@ -148,6 +149,12 @@ if [ -f /etc/config/sqm ]; then
   uci set sqm.node_guest.upload="$((MAX_MBPS * 1000))"
   uci set sqm.node_guest.qdisc='cake'
   uci set sqm.node_guest.script='piece_of_cake.qos'
+  # Fair shares between guests: on the guest bridge, traffic leaving is guests' downloads (split by
+  # receiving device) and traffic arriving is their uploads (split by sending device).
+  uci set sqm.node_guest.qdisc_advanced='1'
+  uci set sqm.node_guest.qdisc_really_really_advanced='1'
+  uci set sqm.node_guest.eqdisc_opts='dual-dsthost'
+  uci set sqm.node_guest.iqdisc_opts='dual-srchost'
 fi
 
 uci commit
