@@ -192,6 +192,7 @@ async function renderPrivacy() {
             <input type="checkbox" name="${esc(p.id)}" ${c[p.id].granted ? "checked" : ""} ${p.necessary ? "disabled" : ""}></label>`).join("")}
       </form>
       <p class="fine" id="saved" aria-live="polite"></p>
+      <details id="history"><summary>${t("Your choices over time")}</summary><div data-history class="fine"></div></details>
     </section>
     <section class="card">
       <h3>${t("Your data, to keep or delete")}</h3>
@@ -208,6 +209,17 @@ async function renderPrivacy() {
     } catch (e) { $("#saved").textContent = e.message; }
   };
   $("#choices").addEventListener("change", () => save());
+  $("#history").addEventListener("toggle", async (e) => {
+    if (!e.currentTarget.open) return;
+    const box = view.querySelector("[data-history]");
+    try {
+      const { consentLedger } = await api("GET", "/api/me/export");
+      const title = Object.fromEntries(purposes.map((p) => [p.id, t(p.title)]));
+      box.innerHTML = consentLedger.length
+        ? `<ul class="list">${[...consentLedger].sort((a, b) => b.at - a.at).map((x) => `<li><div>${esc(title[x.purpose] ?? x.purpose)}<br><span class="muted">${esc(new Date(x.at).toLocaleString(lang))}</span></div><span class="tag ${x.granted ? "ok" : ""}">${x.granted ? t("allowed") : t("declined")}</span></li>`).join("")}</ul>`
+        : esc(t("No choices recorded yet, so the starting choices for where you live apply."));
+    } catch (err) { box.textContent = err.message; }
+  });
   $("#jur").addEventListener("change", async () => {
     await api("PUT", "/api/me/consent", { jurisdiction: $("#jur").value, choices: {} });
     await loadMe();
@@ -244,6 +256,8 @@ function limitsForm(l) {
       <label class="field"><span>${t("Stop above temperature (°C)")}</span><input type="number" name="maxTempC" min="30" max="60" value="${l.maxTempC}"></label>
     </div>
     <p class="fine">${t("Share during these hours (none ticked = any time):")}</p>
+    <div class="row start presets">${[["", "Any time"], ["8-19", "Daytime 08–20"], ["9-17", "Office 09–18"], ["18-22", "Evenings 18–23"]]
+      .map(([v, label]) => `<button type="button" class="link" data-hours="${v}">${t(label)}</button>`).join("")}</div>
     <div class="hours">${HOURS.map((h) => `<label><input type="checkbox" name="hour" value="${h}" ${l.hours.includes(h) ? "checked" : ""}>${String(h).padStart(2, "0")}</label>`).join("")}</div>
     <p class="fine">${t("Guests are always on a separate network and can't reach your devices.")}</p>`;
 }
@@ -411,7 +425,7 @@ async function renderHost() {
         <label class="field"><span>${t("Name people see")}</span><input type="text" name="hname" maxlength="60" required value="${esc(h.name)}"></label>
         <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
       </div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine"></div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" data-share>${t("Share link")}</button><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine"></div>
       <p class="fine" data-quality></p>
       <p class="fine warn" data-problems hidden></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
@@ -435,6 +449,13 @@ async function renderHost() {
         el.querySelector("[data-out]").textContent = h.kind === "phone" || f.namedItem("ssid").value === h.ssid ? t("Saved.") : t("Saved. Paired routers switch to the new network name within 5 minutes.");
       }
       catch (e) { el.querySelector("[data-out]").textContent = e.message; }
+    });
+    el.querySelector("[data-share]").addEventListener("click", async (e) => {
+      const url = `${location.origin}/#/spot/${h.id}`, btn = e.currentTarget;
+      try {
+        if (navigator.share) await navigator.share({ title: h.name, text: t("Free Wi-Fi: join “{ssid}”", { ssid: h.ssid }), url });
+        else { await navigator.clipboard.writeText(url); btn.textContent = t("Link copied"); }
+      } catch (err) { if (err?.name !== "AbortError") el.querySelector("[data-out]").textContent = url; }
     });
     el.querySelector("[data-remove]").addEventListener("click", async () => {
       if (!confirm(t("Remove “{name}”? Its routers stop working and its history is deleted. This can't be undone.", { name: h.name }))) return;
@@ -518,7 +539,7 @@ async function renderSign() {
   const { hotspots } = await api("GET", "/api/me/hotspots");
   const h = hotspots.find((x) => x.id === hid);
   if (!h) { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/host">${t("Back to your hotspots")}</a></section>`; return; }
-  const url = `${location.origin}/`;
+  const url = `${location.origin}/#/spot/${h.id}`;
   view.innerHTML = `
     <section class="card no-print"><div class="row between"><a href="#/host">${t("Back to your hotspots")}</a><button class="primary" id="print">${t("Print")}</button></div>
       <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p></section>
@@ -529,17 +550,50 @@ async function renderSign() {
       <p class="sign-ssid">${esc(h.ssid)}</p>
       <p>${t("No password. Guests are on their own network, kept apart from ours.")}</p>
       <div class="sign-qr"></div>
-      <p class="fine">${t("Scan to find more free Wi-Fi and choose what you share:")} ${esc(url.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</p>
+      <p class="fine">${t("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>
     </article>`;
   $(".sign-qr").append(qrSvg(url));
   $("#print").addEventListener("click", () => window.print());
 }
 
-const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign };
+/** The page a sign's QR code opens: one hotspot's network and status, with nothing about where it is. */
+async function renderSpot() {
+  const hid = (location.hash.match(/^#\/spot\/(hs_[A-Za-z0-9_-]+)/) || [])[1];
+  let h;
+  try { ({ hotspot: h } = await api("GET", `/api/hotspots/${hid}`)); }
+  catch { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/find">${t("Find free Wi-Fi near you")}</a></section>`; return; }
+  const status = {
+    sharing: t("Sharing now"),
+    paused: t("Paused until {time}", { time: new Date(h.pausedUntil).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }),
+    off: t("Not sharing right now"),
+    quiet: t("Its router hasn't checked in recently, so it may be off"),
+  }[h.status];
+  view.innerHTML = `
+    <section class="card">
+      <p class="muted">${t("Free Wi-Fi")} · ${esc(t(h.kind))}</p>
+      <h2>${esc(h.name)}</h2>
+      <p>${t("Join the network")} <strong>${esc(h.ssid)}</strong></p>
+      <p class="${h.status === "sharing" ? "" : "warn"}">${esc(status)}${h.verified ? ` <span class="tag ok">${t("live")}</span>` : ""}</p>
+      <div class="row start"><button data-measure="${esc(h.id)}">${t("I'm on it")}</button>${problemPicker(h.id)}</div>
+      <p class="fine"><a href="#/find">${t("Find free Wi-Fi near you")}</a></p>
+    </section>`;
+  view.querySelector("[data-measure]").addEventListener("click", (e) => measure(h.id, e.currentTarget));
+  view.querySelector("[data-problem]")?.addEventListener("change", (e) => reportProblem(e.currentTarget));
+}
+
+// Sharing-hour presets: "8-19" ticks 08 to 19, i.e. sharing from 08:00 until 20:00. "" clears (any time).
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-hours]");
+  if (!b) return;
+  const [from, to] = b.dataset.hours ? b.dataset.hours.split("-").map(Number) : [1, 0];
+  b.closest("form")?.querySelectorAll('input[name="hour"]').forEach((i) => { const h = Number(i.value); i.checked = h >= from && h <= to; });
+});
+
+const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign, spot: renderSpot };
 async function route() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1] || "find";
   const render = VIEWS[name] || renderFind;
-  const tab = name === "sign" ? "host" : name;
+  const tab = name === "sign" ? "host" : name === "spot" ? "find" : name;
   document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   try { await render(); } catch (e) { view.innerHTML = `<section class="card"><p class="error">${esc(e.message)}</p></section>`; }
 }

@@ -372,6 +372,27 @@ test("a host removes one hotspot; its router key stops working at once", async (
   a.close();
 });
 
+test("a sign's page shows one hotspot's network and status, never where it is", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_s", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_s", body: { name: "Kiosk", kind: "business", ssid: "Nøde Kiosk", lat: 51.5, lng: -0.12 } })).json.hotspot;
+  const get = async () => (await a.call("GET", `/api/hotspots/${h.id}`)).json.hotspot;
+  assert.equal((await a.call("GET", "/api/hotspots/hs_nosuchspot")).status, 404);
+  assert.equal((await get()).status, "off");
+  await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_s", body: { active: true } });
+  const shown = await get();
+  assert.deepEqual(shown, { id: h.id, name: "Kiosk", ssid: "Nøde Kiosk", kind: "business", status: "sharing", verified: false, pausedUntil: null });
+  await a.call("PATCH", `/api/me/hotspots/${h.id}`, { as: "cid_s", body: { pausedUntil: T0 + 3_600_000 } });
+  assert.equal((await get()).status, "paused");
+  a.tick(2 * 3_600_000);
+  assert.equal((await get()).status, "sharing", "the pause ends by itself");
+  const made = await a.call("POST", `/api/me/hotspots/${h.id}/routers`, { as: "cid_s", body: {} });
+  assert.equal((await get()).status, "quiet", "a paired router that hasn't reported");
+  await a.call("POST", "/api/router/status", { headers: { authorization: `Bearer ${made.json.key}` }, body: { state: "sharing" } });
+  assert.deepEqual([(await get()).status, (await get()).verified], ["sharing", true]);
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });
