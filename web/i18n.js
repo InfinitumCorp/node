@@ -146,6 +146,20 @@ const RU = {
   "No choices recorded yet, so the starting choices for where you live apply.": "Решений пока нет, поэтому действуют начальные настройки для вашего региона.",
   "You're offline. Join any Wi-Fi network named “Nøde” and try again.": "Нет подключения. Подключитесь к любой сети Wi-Fi с названием «Nøde» и попробуйте снова.",
   "Can't reach Nøde right now. Check your connection and try again.": "Не удаётся связаться с Nøde. Проверьте подключение и попробуйте снова.",
+  "No internet: check the router's own connection and that the daily data limit isn't used up.": "Нет интернета: проверьте подключение самого роутера и не исчерпан ли дневной лимит трафика.",
+  "Can't find it: check the network name on your sign matches, and that sharing hours include now.": "Не находят сеть: проверьте, что название сети на табличке совпадает, а часы раздачи включают текущее время.",
+  "Asks for a password: the guest network must be open; re-run the router setup or check the phone hotspot settings.": "Просит пароль: гостевая сеть должна быть открытой; повторите настройку роутера или проверьте настройки точки доступа на телефоне.",
+  "Too slow: raise the guest speed cap if your connection allows, or move the router closer to where guests sit.": "Медленно: увеличьте ограничение скорости для гостей, если позволяет канал, или поставьте роутер ближе к гостям.",
+  "{n} GB": "{n} ГБ",
+  "{sharing} of {total} sharing now": "Сейчас раздают: {sharing} из {total}",
+  "{n} routers live": "Роутеров на связи: {n}",
+  "{data} shared with guests this week": "За неделю гостям отдано {data}",
+  "{n} problem reports": "Сообщений о проблемах: {n}",
+  "~{n} sessions": "~{n} сеансов",
+  "Busy hours this week, by time of day (hours with fewer than 10 sessions are hidden):": "Загруженность за неделю по времени суток (часы, где меньше 10 сеансов, скрыты):",
+  "Only show hotspots a router confirmed in the last 20 minutes": "Показывать только точки, работу которых роутер подтвердил за последние 20 минут",
+  "Sign language": "Язык таблички",
+  "Both": "Оба",
   "Print a sign": "Напечатать табличку",
   "Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).": "Скорость у гостей: за 7 дней пока мало замеров (нужно {n} гостей, разрешивших отчёты о качестве).",
   "Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.": "Гости за 7 дней: около {sessions} сеансов, обычная скорость {down} Мбит/с, подключились {ok}%.",
@@ -209,7 +223,6 @@ const RU = {
   "Stop": "Стоп",
   "Start sharing": "Начать раздачу",
   "Busy hours": "Загруженность",
-  "{when}: ~{n} sessions": "{when}: ~{n} сеансов",
   "Not enough visits yet to show (hours with fewer than 10 sessions are hidden).": "Пока мало посещений (часы, где меньше 10 сеансов, скрыты).",
   "We need the hotspot's location (to about 150 m) so people can find it.": "Нужно место точки (с точностью около 150 м), чтобы её могли найти.",
   "Request failed ({status})": "Запрос не удался ({status})",
@@ -278,6 +291,12 @@ export function choose(code) {
 /** t("Network: {ssid}", { ssid }) — English text is the key; falls back to it. */
 export function t(key, vars) {
   const s = (DICTS[lang] && DICTS[lang][key]) || key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
+}
+
+/** Like t(), in a given language rather than the page's (for printed signs). */
+export function tIn(code, key, vars) {
+  const s = (DICTS[code] && DICTS[code][key]) || key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 

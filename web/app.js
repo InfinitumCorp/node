@@ -1,6 +1,6 @@
 // Nøde web app. No framework; renders three views into <main> from the URL hash.
 import { placePins, ringKm } from "./radar.js";
-import { LANGS, apiError, choose, lang, routerState, setup, t } from "./i18n.js";
+import { LANGS, apiError, choose, lang, routerState, setup, t, tIn } from "./i18n.js";
 import qrcode from "./qrcode.vendor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -73,11 +73,17 @@ async function renderFind() {
     navigator.geolocation.getCurrentPosition(async (pos) => {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
-        out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
-          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
+        const anyLive = hotspots.some((h) => h.verified) && hotspots.some((h) => !h.verified);
+        out.innerHTML = hotspots.length ? `${anyLive ? `<label class="check"><input type="checkbox" id="liveonly"> ${t("Only show hotspots a router confirmed in the last 20 minutes")}</label>` : ""}<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
+          <li data-live="${h.verified ? 1 : 0}"><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong><a href="#/spot/${esc(h.id)}">${esc(h.name)}</a></strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
           <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button><br>${problemPicker(h.id)}</div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
         if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
+        out.querySelector("#liveonly")?.addEventListener("change", (e) => {
+          const only = e.currentTarget.checked;
+          out.querySelectorAll("li[data-live]").forEach((li) => { li.hidden = only && li.dataset.live !== "1"; });
+          out.querySelectorAll(".radar .pin").forEach((g) => { g.classList.toggle("dim", only && !g.classList.contains("live")); });
+        });
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
         out.querySelectorAll("[data-problem]").forEach((s) => s.addEventListener("change", () => reportProblem(s)));
       } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
@@ -113,6 +119,13 @@ function radar(me, hotspots) {
   });
   return svg;
 }
+
+const PROBLEM_TIPS = {
+  no_internet: "No internet: check the router's own connection and that the daily data limit isn't used up.",
+  not_found: "Can't find it: check the network name on your sign matches, and that sharing hours include now.",
+  asks_password: "Asks for a password: the guest network must be open; re-run the router setup or check the phone hotspot settings.",
+  slow: "Too slow: raise the guest speed cap if your connection allows, or move the router closer to where guests sit.",
+};
 
 const PROBLEMS = {
   no_internet: "Connected, but no internet",
@@ -391,7 +404,7 @@ async function renderHost() {
   const anyActive = hotspots.some((h) => h.active);
   view.innerHTML = `
     ${anyActive ? `<section class="card center"><button class="stop" id="stopall">${t("Stop sharing now")}</button><p class="fine">${t("Stops every hotspot you run, immediately.")}</p></section>` : ""}
-    <section class="card"><h2>${t("Your hotspots")}</h2>${await batteryNote()}
+    <section class="card"><h2>${t("Your hotspots")}</h2><p class="muted" id="week" aria-live="polite"></p>${await batteryNote()}
       ${hotspots.length ? "" : `<p class="muted">${t("None yet. Add your home router, venue Wi-Fi or a Nøde device below.")}</p>`}
       <div id="spots"></div></section>
     <section class="card"><h3>${t("Add a hotspot")}</h3>
@@ -411,6 +424,16 @@ async function renderHost() {
     <section class="card"><h3>${t("Stop hosting entirely")}</h3><p class="muted">${t("Turns off sharing and every hotspot.")}</p><button id="optout">${t("Stop hosting")}</button></section>`;
 
   const spots = $("#spots");
+  api("GET", "/api/me/summary").then((s) => {
+    if (!s.hotspots) return;
+    const gb = s.sharedMb >= 1000 ? t("{n} GB", { n: (s.sharedMb / 1024).toLocaleString(lang, { maximumFractionDigits: 1 }) }) : t("{n} MB", { n: s.sharedMb });
+    $("#week").textContent = [
+      t("{sharing} of {total} sharing now", { sharing: s.sharing, total: s.hotspots }),
+      s.liveRouters ? t("{n} routers live", { n: s.liveRouters }) : null,
+      s.sharedMb ? t("{data} shared with guests this week", { data: gb }) : null,
+      s.problems ? t("{n} problem reports", { n: s.problems }) : null,
+    ].filter(Boolean).join(" · ");
+  }).catch(() => {});
   for (const h of hotspots) {
     const el = document.createElement("form");
     el.className = "card";
@@ -466,9 +489,21 @@ async function renderHost() {
     });
     el.querySelector("[data-activity]")?.addEventListener("click", async () => {
       const r = await api("GET", `/api/me/hotspots/${h.id}/activity`);
-      el.querySelector("[data-out]").innerHTML = r.rows.length
-        ? r.rows.map((x) => esc(t("{when}: ~{n} sessions", { when: new Date(x.hour).toLocaleString(lang), n: x.sessions }))).join("<br>")
-        : t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden).");
+      const out = el.querySelector("[data-out]");
+      if (!r.rows.length) { out.textContent = t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden)."); return; }
+      // The shown hours, added up by time of day in your time zone.
+      const byHour = new Map();
+      for (const x of r.rows) { const hr = new Date(x.hour).getHours(); byHour.set(hr, (byHour.get(hr) ?? 0) + x.sessions); }
+      const max = Math.max(...byHour.values());
+      const list = document.createElement("ul");
+      list.className = "days";
+      for (const [hr, n] of [...byHour].sort((a, b) => a[0] - b[0])) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${esc(`${String(hr).padStart(2, "0")}:00`)}</span><meter min="0"></meter><span>${esc(t("~{n} sessions", { n }))}</span>`;
+        Object.assign(li.querySelector("meter"), { max, value: n });
+        list.append(li);
+      }
+      out.replaceChildren(Object.assign(document.createElement("p"), { textContent: t("Busy hours this week, by time of day (hours with fewer than 10 sessions are hidden):") }), list);
     });
     api("GET", `/api/me/hotspots/${h.id}/quality`).then((q) => {
       el.querySelector("[data-quality]").textContent = !q.enough
@@ -482,6 +517,7 @@ async function renderHost() {
       const box = el.querySelector("[data-problems]");
       box.textContent = t("Guests reported, last 7 days: {list}", {
         list: seen.map(([k, n]) => t("{what} ({n})", { what: t(PROBLEMS[k] ?? k), n })).join(", ") });
+      box.after(...seen.filter(([k]) => PROBLEM_TIPS[k]).map(([k]) => Object.assign(document.createElement("p"), { className: "fine", textContent: t(PROBLEM_TIPS[k]) })));
       box.hidden = false;
     }).catch(() => {});
     if (h.kind !== "phone") wireRouters(el, h);
@@ -542,19 +578,32 @@ async function renderSign() {
   const h = hotspots.find((x) => x.id === hid);
   if (!h) { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/host">${t("Back to your hotspots")}</a></section>`; return; }
   const url = `${location.origin}/#/spot/${h.id}`;
+  const other = lang === "ru" ? "en" : "ru";
   view.innerHTML = `
     <section class="card no-print"><div class="row between"><a href="#/host">${t("Back to your hotspots")}</a><button class="primary" id="print">${t("Print")}</button></div>
-      <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p></section>
-    <article class="sign">
-      <p class="sign-kicker">${t("Free Wi-Fi")}</p>
+      <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p>
+      <label class="field"><span>${t("Sign language")}</span><select id="signlang">
+        ${[[lang, LANGS.find((l) => l.code === lang)?.name ?? lang], [other, LANGS.find((l) => l.code === other)?.name ?? other], [`${lang}+${other}`, t("Both")]]
+          .map(([v, n]) => `<option value="${esc(v)}">${esc(n)}</option>`).join("")}
+      </select></label></section>
+    <article class="sign"></article>`;
+  const draw = (codes) => {
+    // Each line in the first language, with the second underneath in smaller type.
+    const line = (key, cls = "") => codes.map((c, i) => `<span class="${i ? "sign-alt" : cls}" lang="${c}">${esc(tIn(c, key))}</span>`).join(codes.length > 1 ? "<br>" : "");
+    const art = $(".sign");
+    art.setAttribute("lang", codes[0]);
+    art.innerHTML = `
+      <p class="sign-kicker">${line("Free Wi-Fi")}</p>
       <h1>${esc(h.name)}</h1>
-      <p>${t("Join the network")}</p>
+      <p>${line("Join the network")}</p>
       <p class="sign-ssid">${esc(h.ssid)}</p>
-      <p>${t("No password. Guests are on their own network, kept apart from ours.")}</p>
+      <p>${line("No password. Guests are on their own network, kept apart from ours.")}</p>
       <div class="sign-qr"></div>
-      <p class="fine">${t("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>
-    </article>`;
-  $(".sign-qr").append(qrSvg(url));
+      <p class="fine">${line("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>`;
+    $(".sign-qr").append(qrSvg(url));
+  };
+  draw([lang]);
+  $("#signlang").addEventListener("change", (e) => draw(e.currentTarget.value.split("+")));
   $("#print").addEventListener("click", () => window.print());
 }
 

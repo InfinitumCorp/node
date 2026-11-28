@@ -677,6 +677,21 @@
         }
       }
     },
+    "/api/me/summary": {
+      "get": {
+        "summary": "Your week as a host across all your hotspots",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{days:7, hotspots, sharing, liveRouters, sharedMb, problems}"
+          }
+        }
+      }
+    },
     "/api/me/hotspots/{id}": {
       "patch": {
         "summary": "Rename, start/stop, change limits",

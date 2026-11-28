@@ -396,6 +396,43 @@ test("a sign's page shows one hotspot's network and status, never where it is", 
   a.close();
 });
 
+test("a host's week at a glance adds up their hotspots, routers, guest data and reports", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_w", body: { choices: { host_bandwidth: true } } });
+  const mk = async (name: string) => (await a.call("POST", "/api/me/hotspots", { as: "cid_w", body: { name, kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const one = await mk("Cafe"), two = await mk("Shop");
+  await a.call("PATCH", `/api/me/hotspots/${one.id}`, { as: "cid_w", body: { active: true } });
+  await a.call("PATCH", `/api/me/hotspots/${two.id}`, { as: "cid_w", body: { active: true, pausedUntil: T0 + 3_600_000 } });
+  const key = (await a.call("POST", `/api/me/hotspots/${one.id}/routers`, { as: "cid_w", body: {} })).json.key;
+  const status = (usedMb: number) => a.call("POST", "/api/router/status", { headers: { authorization: `Bearer ${key}` }, body: { state: "sharing", usedMb } });
+  await status(300); a.tick(3_600_000); await status(500);
+  a.tick(20 * 3_600_000); await status(200);
+  for (const s of ["x", "y"]) await a.call("POST", "/api/telemetry", { body: { kind: "problem", hotspot: two.id, session: s, reason: "slow" } });
+  assert.equal((await a.call("GET", "/api/me/summary")).status, 401);
+  assert.deepEqual((await a.call("GET", "/api/me/summary", { as: "cid_w" })).json,
+    { days: 7, hotspots: 2, sharing: 2, liveRouters: 1, sharedMb: 700, problems: 2 }, "the pause has ended; two router days: 500 + 200 MB");
+  assert.deepEqual((await a.call("GET", "/api/me/summary", { as: "cid_nobody" })).json, { days: 7, hotspots: 0, sharing: 0, liveRouters: 0, sharedMb: 0, problems: 0 });
+  a.close();
+});
+
+test("anonymous measurements are deleted after 100 days", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_old", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_old", body: { name: "Cafe", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const send = (kind: string, session: string) => a.call("POST", "/api/telemetry", { body: { kind, hotspot: h.id, session, downMbps: 10 } });
+  await send("quality", "old"); await send("visit", "old");
+  const count = async () => (await a.store.venueReport(h.id, 0, T0 + 400 * 86_400_000)).suppressed;
+  assert.equal(await count(), 1, "kept while fresh");
+  a.tick(101 * 86_400_000);
+  await send("quality", "new"); await send("visit", "new");
+  a.tick(3_600_000);
+  const q = await a.store.hotspotQuality(h.id, 0, T0 + 400 * 86_400_000);
+  assert.equal(q.enough, false);
+  const all = await a.store.venueReport(h.id, 0, T0 + 400 * 86_400_000);
+  assert.equal(all.suppressed, 1, "only the new hour is left");
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });
