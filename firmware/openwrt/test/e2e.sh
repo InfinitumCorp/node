@@ -112,6 +112,22 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   rm -f /tmp/node-updated; /usr/sbin/nod-update
   cmp -s /usr/sbin/nod-sync /tmp/sync.before || fail "a tampered nod-sync was installed"
   uci set node.settings.active=1; uci set node.settings.hours=''; uci commit node
+
+  echo "== installer refuses a tampered download, then installs a good one"
+  inst="$site/inst/firmware/openwrt"; mkdir -p "$inst"
+  cp ./nod-setup.sh ./nod-limits.sh ./nod-sync.sh ./nod-update.sh ./nod-status.sh "$inst/"
+  (cd "$inst" && sha256sum nod-setup.sh nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh > SHA256SUMS)
+  echo '# tampered' >> "$inst/nod-setup.sh"
+  cp /etc/config/wireless /tmp/wireless.before
+  ROLE=home NODE_API=http://127.0.0.1:8099/inst sh ./nod-install.sh 2>/tmp/inst.err && fail "the installer ran a tampered nod-setup"
+  grep -q "checksum mismatch" /tmp/inst.err || fail "installer error: $(cat /tmp/inst.err)"
+  cmp -s /etc/config/wireless /tmp/wireless.before || fail "a refused install changed the Wi-Fi config"
+  cp ./nod-setup.sh "$inst/nod-setup.sh"
+  ROLE=home NODE_API=http://127.0.0.1:8099/inst sh ./nod-install.sh >/dev/null
+  want node.settings.api http://127.0.0.1:8099/inst
+  want node.settings.key nr_e2etestkeye2etestkey00
+  cmp -s /usr/sbin/nod-limits ./nod-limits.sh || fail "the installer didn't install nod-limits"
+  uci set node.settings.api=http://127.0.0.1:8099; uci commit node
 else
   echo "(skipped: no curl and opkg couldn't install it)"
 fi
