@@ -18,6 +18,7 @@ import { HOTSPOT_KINDS, PROBLEMS, type HostLimits, type HotspotKind, type Proble
  *   GET  /api/me/hotspots                 (CID) my hotspots
  *   POST /api/me/hotspots                 (CID, host_bandwidth consent) register a hotspot
  *   PATCH /api/me/hotspots/:id            (CID) name, ssid, active (the stop button), pausedUntil, limits
+ *   DELETE /api/me/hotspots/:id           (CID) remove a hotspot, its routers and their history
  *   GET  /api/me/hotspots/:id/activity    (CID) the venue's own busy-hours report
  *   GET  /api/me/hotspots/:id/quality     (CID) guests' measured speed over 7 days, hidden under 10 sessions
  *   GET  /api/me/hotspots/:id/problems    (CID) guests' problem reports over 7 days, counted per reason
@@ -341,6 +342,10 @@ export function createApp(opts: Options) {
         }, now());
         if (!h) throw new HttpError(404, "No such hotspot.");
         return json(200, { hotspot: h });
+      }
+      if (hm && !hm[2] && m === "DELETE") {
+        if (!(await store.removeHotspot(hm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");
+        return json(200, { removed: true });
       }
       if (hm && hm[2] && m === "GET") {
         if (!(await store.hotspot(hm[1]!, p.cid))) throw new HttpError(404, "No such hotspot.");

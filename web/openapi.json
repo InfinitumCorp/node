@@ -748,6 +748,33 @@
             }
           }
         }
+      },
+      "delete": {
+        "summary": "Remove a hotspot, its paired routers (their keys stop working at once), router history, pauses and problem reports",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{removed:true}"
+          },
+          "404": {
+            "description": "Not your hotspot"
+          }
+        }
       }
     },
     "/api/me/hotspots/{id}/activity": {

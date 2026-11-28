@@ -355,6 +355,23 @@ test("guests report problems anonymously; the host sees daily counts for 7 days"
   a.close();
 });
 
+test("a host removes one hotspot; its router key stops working at once", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_d", body: { choices: { host_bandwidth: true } } });
+  const mk = async (name: string) => (await a.call("POST", "/api/me/hotspots", { as: "cid_d", body: { name, kind: "home", lat: 1, lng: 1 } })).json.hotspot;
+  const gone = await mk("Old flat"), kept = await mk("New flat");
+  const made = await a.call("POST", `/api/me/hotspots/${gone.id}/routers`, { as: "cid_d", body: {} });
+  const bearer = { authorization: `Bearer ${made.json.key}` };
+  assert.equal((await a.call("GET", "/api/router/config", { headers: bearer })).status, 200);
+  await a.call("POST", "/api/telemetry", { body: { kind: "problem", hotspot: gone.id, session: "s", reason: "slow" } });
+  assert.equal((await a.call("DELETE", `/api/me/hotspots/${gone.id}`, { as: "cid_other" })).status, 404, "owner only");
+  assert.equal((await a.call("DELETE", `/api/me/hotspots/${gone.id}`, { as: "cid_d" })).status, 200);
+  assert.equal((await a.call("DELETE", `/api/me/hotspots/${gone.id}`, { as: "cid_d" })).status, 404);
+  assert.equal((await a.call("GET", "/api/router/config", { headers: bearer })).status, 401);
+  assert.deepEqual((await a.store.myHotspots("cid_d")).map((h) => h.id), [kept.id]);
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });

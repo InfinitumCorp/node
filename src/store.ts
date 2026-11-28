@@ -130,6 +130,22 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
     },
 
+    /**
+     * Removes one hotspot and everything tied to it: routers (their keys stop working), router history,
+     * pauses and problem reports. Anonymous speed samples stay, as they do when an account is erased.
+     */
+    async removeHotspot(hid: string, owner: string) {
+      await init();
+      if (!(await sql.get("SELECT 1 AS x FROM hotspots WHERE id = ? AND owner = ?", hid, owner))) return false;
+      await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE hotspot = ?)", hid);
+      await sql.run("DELETE FROM routers WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM hotspot_pauses WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM problem_reports WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM venue_sessions WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM hotspots WHERE id = ?", hid);
+      return true;
+    },
+
     /** Everything Nøde holds about a person, for "Download my data". Router keys are never stored, so never included. */
     async export(cid: string) {
       await init();

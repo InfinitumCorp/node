@@ -125,6 +125,8 @@ const RU = {
   "It hasn't checked in since it was paired. Run the command shown when you paired it, or unpair and pair again.": "Роутер не выходил на связь после привязки. Выполните команду, показанную при привязке, или отвяжите и привяжите снова.",
   "Not on the map right now: {state}.": "Сейчас не на карте: {state}.",
   "Guest data by day": "Трафик гостей по дням",
+  "Remove this hotspot": "Удалить эту точку",
+  "Remove “{name}”? Its routers stop working and its history is deleted. This can't be undone.": "Удалить «{name}»? Её роутеры перестанут работать, а история будет удалена. Это нельзя отменить.",
   "Print a sign": "Напечатать табличку",
   "Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).": "Скорость у гостей: за 7 дней пока мало замеров (нужно {n} гостей, разрешивших отчёты о качестве).",
   "Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.": "Гости за 7 дней: около {sessions} сеансов, обычная скорость {down} Мбит/с, подключились {ok}%.",

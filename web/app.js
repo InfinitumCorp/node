@@ -411,7 +411,7 @@ async function renderHost() {
         <label class="field"><span>${t("Name people see")}</span><input type="text" name="hname" maxlength="60" required value="${esc(h.name)}"></label>
         <label class="field"><span>${t("Wi-Fi network name")}</span><input type="text" name="ssid" maxlength="32" required value="${esc(h.ssid)}"></label>
       </div>
-      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
+      ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a><button type="button" class="link danger" data-remove>${t("Remove this hotspot")}</button></div><div data-out class="fine"></div>
       <p class="fine" data-quality></p>
       <p class="fine warn" data-problems hidden></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
@@ -434,6 +434,11 @@ async function renderHost() {
         await api("PATCH", `/api/me/hotspots/${h.id}`, { name: f.namedItem("hname").value, ssid: f.namedItem("ssid").value, limits: readLimits(el) });
         el.querySelector("[data-out]").textContent = h.kind === "phone" || f.namedItem("ssid").value === h.ssid ? t("Saved.") : t("Saved. Paired routers switch to the new network name within 5 minutes.");
       }
+      catch (e) { el.querySelector("[data-out]").textContent = e.message; }
+    });
+    el.querySelector("[data-remove]").addEventListener("click", async () => {
+      if (!confirm(t("Remove “{name}”? Its routers stop working and its history is deleted. This can't be undone.", { name: h.name }))) return;
+      try { await api("DELETE", `/api/me/hotspots/${h.id}`); renderHost(); }
       catch (e) { el.querySelector("[data-out]").textContent = e.message; }
     });
     el.querySelector("[data-activity]")?.addEventListener("click", async () => {
