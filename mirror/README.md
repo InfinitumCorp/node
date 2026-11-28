@@ -40,7 +40,7 @@ npx wrangler@4 secret put NODE_MIRROR_SECRET               # the Worker
 gcloud run services update node-mirror --region europe-north1 --project scalvs-mirror --update-env-vars MIRROR_SECRET=<the secret>
 ```
 
-The mirror then sends `x-node-mirror-client: <id>.<sig>`, an id derived from the address with the secret (the address itself never leaves the mirror) and a signature the Worker checks. Without the secret both sides behave as before.
+The mirror then sends `x-node-mirror-client: <id>.<sig>`, an id derived from the address with the secret (the address itself never leaves the mirror) and a signature the Worker checks. Without the secret both sides behave as before, which means anyone can add `x-node-mirror: ru` to skip the per-address limit (the per-hotspot limit still holds). With the secret set, a request without a valid tag is limited by its own address.
 
 ## Set up (Google Cloud project `scalvs-mirror`, which already hosts the other mirrors)
 
