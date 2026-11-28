@@ -75,6 +75,15 @@ uci set node.settings.hours="$other"; uci commit node
 want wireless.node_ap_radio0.disabled 1
 uci set node.settings.hours=''; uci commit node
 
+echo "== limits: daily limit reached"
+uci set node.settings.daily_mb=0; uci commit node
+/usr/sbin/nod-limits
+[ "$(sed -n 1p /tmp/node-state)" = "daily limit reached" ] || fail "state: $(sed -n 1p /tmp/node-state)"
+want wireless.node_ap_radio0.disabled 1
+uci set node.settings.daily_mb=500; uci commit node
+/usr/sbin/nod-limits
+want wireless.node_ap_radio0.disabled 0
+
 echo "== sync with the app unreachable keeps settings and still applies limits"
 uci set node.settings.api=http://127.0.0.1:9; uci commit node
 NOD_UPDATE=/nonexistent /usr/sbin/nod-sync
