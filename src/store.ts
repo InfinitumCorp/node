@@ -177,6 +177,25 @@ export function openStore(sql: Sql) {
       if (!r || (owner && r.owner !== owner)) return null;
       return toHotspot(r, Boolean(owner));
     },
+    /**
+     * What a guest who scanned a sign may see: the name, the network and whether it's sharing.
+     * No location, owner or limits.
+     */
+    async publicHotspot(hid: string, now = Date.now()) {
+      await init();
+      const r = await sql.get(`SELECT h.id, h.name, h.ssid, h.kind, h.active, p.until AS paused_until,
+          (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id) AS n_routers,
+          (SELECT COUNT(*) FROM routers r WHERE r.hotspot = h.id AND r.last_seen >= ? AND r.state = 'sharing') AS n_live
+        FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id AND p.until > ? WHERE h.id = ?`, now - ROUTER_LIVE_MS, now, hid);
+      if (!r) return null;
+      const live = Number(r.n_live) > 0;
+      const status = !r.active ? "off" : r.paused_until != null ? "paused" : Number(r.n_routers) > 0 && !live ? "quiet" : "sharing";
+      return {
+        id: String(r.id), name: String(r.name), ssid: String(r.ssid), kind: r.kind as HotspotKind,
+        status: status as "sharing" | "paused" | "off" | "quiet", verified: live,
+        pausedUntil: r.paused_until == null ? null : Number(r.paused_until),
+      };
+    },
     async myHotspots(owner: string): Promise<Hotspot[]> {
       await init();
       return (await sql.all(`SELECT h.*, p.until AS paused_until FROM hotspots h LEFT JOIN hotspot_pauses p ON p.hotspot = h.id

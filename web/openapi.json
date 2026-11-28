@@ -277,6 +277,29 @@
         }
       }
     },
+    "/api/hotspots/{id}": {
+      "get": {
+        "summary": "One hotspot as its printed sign shows it: name, network, kind and status. Never its location, owner or limits.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{hotspot:{id,name,ssid,kind,status:\"sharing\"|\"paused\"|\"off\"|\"quiet\",verified,pausedUntil}}"
+          },
+          "404": {
+            "description": "No such hotspot"
+          }
+        }
+      }
+    },
     "/api/telemetry": {
       "post": {
         "summary": "Anonymous visit or network-quality sample (only with the matching consent), or a problem report",

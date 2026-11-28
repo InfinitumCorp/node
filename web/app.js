@@ -518,7 +518,7 @@ async function renderSign() {
   const { hotspots } = await api("GET", "/api/me/hotspots");
   const h = hotspots.find((x) => x.id === hid);
   if (!h) { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/host">${t("Back to your hotspots")}</a></section>`; return; }
-  const url = `${location.origin}/`;
+  const url = `${location.origin}/#/spot/${h.id}`;
   view.innerHTML = `
     <section class="card no-print"><div class="row between"><a href="#/host">${t("Back to your hotspots")}</a><button class="primary" id="print">${t("Print")}</button></div>
       <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p></section>
@@ -529,17 +529,42 @@ async function renderSign() {
       <p class="sign-ssid">${esc(h.ssid)}</p>
       <p>${t("No password. Guests are on their own network, kept apart from ours.")}</p>
       <div class="sign-qr"></div>
-      <p class="fine">${t("Scan to find more free Wi-Fi and choose what you share:")} ${esc(url.replace(/^https?:\/\//, "").replace(/\/$/, ""))}</p>
+      <p class="fine">${t("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>
     </article>`;
   $(".sign-qr").append(qrSvg(url));
   $("#print").addEventListener("click", () => window.print());
 }
 
-const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign };
+/** The page a sign's QR code opens: one hotspot's network and status, with nothing about where it is. */
+async function renderSpot() {
+  const hid = (location.hash.match(/^#\/spot\/(hs_[A-Za-z0-9_-]+)/) || [])[1];
+  let h;
+  try { ({ hotspot: h } = await api("GET", `/api/hotspots/${hid}`)); }
+  catch { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/find">${t("Find free Wi-Fi near you")}</a></section>`; return; }
+  const status = {
+    sharing: t("Sharing now"),
+    paused: t("Paused until {time}", { time: new Date(h.pausedUntil).toLocaleTimeString(lang, { hour: "2-digit", minute: "2-digit" }) }),
+    off: t("Not sharing right now"),
+    quiet: t("Its router hasn't checked in recently, so it may be off"),
+  }[h.status];
+  view.innerHTML = `
+    <section class="card">
+      <p class="muted">${t("Free Wi-Fi")} · ${esc(t(h.kind))}</p>
+      <h2>${esc(h.name)}</h2>
+      <p>${t("Join the network")} <strong>${esc(h.ssid)}</strong></p>
+      <p class="${h.status === "sharing" ? "" : "warn"}">${esc(status)}${h.verified ? ` <span class="tag ok">${t("live")}</span>` : ""}</p>
+      <div class="row start"><button data-measure="${esc(h.id)}">${t("I'm on it")}</button>${problemPicker(h.id)}</div>
+      <p class="fine"><a href="#/find">${t("Find free Wi-Fi near you")}</a></p>
+    </section>`;
+  view.querySelector("[data-measure]").addEventListener("click", (e) => measure(h.id, e.currentTarget));
+  view.querySelector("[data-problem]")?.addEventListener("change", (e) => reportProblem(e.currentTarget));
+}
+
+const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign, spot: renderSpot };
 async function route() {
   const name = (location.hash.match(/^#\/(\w+)/) || [])[1] || "find";
   const render = VIEWS[name] || renderFind;
-  const tab = name === "sign" ? "host" : name;
+  const tab = name === "sign" ? "host" : name === "spot" ? "find" : name;
   document.querySelectorAll(".tabs a").forEach((a) => (a.dataset.tab === tab ? a.setAttribute("aria-current", "page") : a.removeAttribute("aria-current")));
   try { await render(); } catch (e) { view.innerHTML = `<section class="card"><p class="error">${esc(e.message)}</p></section>`; }
 }

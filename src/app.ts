@@ -11,6 +11,7 @@ import { HOTSPOT_KINDS, PROBLEMS, type HostLimits, type HotspotKind, type Proble
  *   GET  /api/purposes                    what each data purpose means
  *   GET  /api/jurisdictions               consent defaults by jurisdiction
  *   GET  /api/hotspots?lat&lng            active hotspots around a point (public)
+ *   GET  /api/hotspots/:id                one hotspot's name, network and status, for its sign (public, no location)
  *   GET  /api/me                          (CID) account, consent state
  *   PUT  /api/me/consent                  (CID) { jurisdiction?, choices: { purpose: boolean } }
  *   GET  /api/me/export                   (CID) everything Nøde holds about me, as a JSON download
@@ -185,6 +186,13 @@ export function createApp(opts: Options) {
       const hotspots = (await store.nearby([...cells], now())).map((h) => ({ ...h, distanceKm: Math.round(km(lat, lng, h.lat, h.lng) * 10) / 10 }))
         .sort((a, b) => a.distanceKm - b.distanceKm);
       return json(200, { hotspots });
+    }
+
+    const pub = /^\/api\/hotspots\/(hs_[A-Za-z0-9_-]{6,20})$/.exec(path);
+    if (pub && m === "GET") {
+      const h = await store.publicHotspot(pub[1]!, now());
+      if (!h) throw new HttpError(404, "No such hotspot.");
+      return json(200, { hotspot: h });
     }
 
     if (path === "/api/telemetry" && m === "POST") {
