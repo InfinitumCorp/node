@@ -52,6 +52,10 @@ wget -qO /tmp/nod-uninstall.sh https://node.infinitumcorporation.ai/firmware/ope
 
 Every 5 minutes: its state ("sharing", "stopped by host", "outside sharing hours", "daily limit reached" or "too hot"), the hottest temperature sensor and the guest data used today. Nothing about guests: no devices, addresses or sites.
 
+## Updates
+
+Once a day the router checks for newer Nøde scripts. It installs one only if it matches the published `SHA256SUMS` and parses cleanly, so a bad download changes nothing. To turn this off: `uci set node.settings.autoupdate=0; uci commit node`. To update by hand: `nod-update`.
+
 ## Troubleshooting
 
 On the router, `nod-status` shows the settings, the last check and recent log lines. It never prints the router key, so it's safe to send to support.
