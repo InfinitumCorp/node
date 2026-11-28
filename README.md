@@ -61,6 +61,12 @@ The CSP is set in two places that must match: `src/app.ts` (API and local server
 
 **Roles.** A *user* joins any network named “Nøde”. A *host* chooses, separately, to share part of a connection, with a speed cap, daily data limit, battery and temperature cutoffs, a schedule and a stop button. Guests are always on an isolated network. New hotspots start stopped.
 
+**Hosting, day to day.** In the Host tab a host can start, stop or pause a hotspot (1 h, 3 h or until morning; it comes back by itself), rename it and change its network name (paired routers follow within 5 minutes), print a sign with a QR code for the window, see each router's last report and a week of guest data, and see how fast the hotspot was for guests (only once 10 guests have measured it). A hotspot with paired routers is on the public map only while one of them reports "sharing" (marked "live").
+
+**Languages.** English and Russian (`web/i18n.js`); Russian is the default through the Russian mirror and for Russian-language browsers, and there's a switch in the footer. A test fails if any shown text lacks a translation.
+
+**Your data.** "Download my data" gives a JSON copy of everything Nøde holds about a person (`GET /api/me/export`); "Delete my Nøde data" erases it.
+
 **Sign-in.** Cumulus ID only (“Sign in with Cumulus ID” / “Create a Cumulus ID”), via the shared Cumulus bar. Browsing hotspots needs no account.
 
 **Data.** Analytics rows carry a rotating anonymous session id, a ~5 km area and an hour — never an account id. Reports drop any group under 10 sessions and round counts to 5. Free access never depends on an optional purpose; see [docs/LEGAL.md](docs/LEGAL.md).

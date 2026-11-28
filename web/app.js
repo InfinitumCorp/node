@@ -256,12 +256,23 @@ function wireRouters(el, h) {
   el.querySelector("[data-pair]").addEventListener("click", async () => {
     try {
       const { router, key } = await api("POST", `/api/me/hotspots/${h.id}/routers`, {});
-      keyBox.innerHTML = `<div class="notice"><strong>${esc(t("{name} paired.", { name: router.name }))}</strong> ${t("Run this on the router now. The key is shown only once; if you lose it, unpair and pair again.")}
-        <pre class="cmd"></pre><button type="button">${t("Copy")}</button></div>`;
-      const cmd = `uci set node.settings.key='${key}'; uci commit node; nod-sync`;
-      keyBox.querySelector("pre").textContent = cmd;
-      const copy = keyBox.querySelector("button");
-      copy.addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); copy.textContent = t("Copied"); } catch {} });
+      // A new router gets the one-command installer (it checks the scripts against SHA256SUMS); one already
+      // running Nøde only needs the key. Through the Russian mirror both point at the mirror.
+      const site = location.origin;
+      const api_ = site === "https://node.infinitumcorporation.ai" ? "" : ` NODE_API='${site}'`;
+      const role = ["home", "business", "relay", "gateway"].includes(h.kind) ? h.kind : "home";
+      const cmds = [
+        [t("New router (OpenWrt 23.05 or later):"), `wget -qO /tmp/nod-install.sh ${site}/firmware/openwrt/nod-install.sh && ROLE=${role} NODE_KEY='${key}'${api_} sh /tmp/nod-install.sh`],
+        [t("Router that already runs Nøde:"), `uci set node.settings.key='${key}';${api_ ? ` uci set node.settings.api='${site}';` : ""} uci commit node; nod-sync`],
+      ];
+      keyBox.innerHTML = `<div class="notice"><strong>${esc(t("{name} paired.", { name: router.name }))}</strong> ${t("Run one of these on the router now. The key is shown only once; if you lose it, unpair and pair again.")}
+        ${cmds.map(() => `<p class="fine"></p><pre class="cmd"></pre><button type="button">${t("Copy")}</button>`).join("")}</div>`;
+      const labels = keyBox.querySelectorAll("p.fine"), pres = keyBox.querySelectorAll("pre"), buttons = keyBox.querySelectorAll("button");
+      cmds.forEach(([label, cmd], i) => {
+        labels[i].textContent = label;
+        pres[i].textContent = cmd;
+        buttons[i].addEventListener("click", async () => { try { await navigator.clipboard.writeText(cmd); buttons[i].textContent = t("Copied"); } catch {} });
+      });
       load();
     } catch (e) { keyBox.textContent = e.message; }
   });
