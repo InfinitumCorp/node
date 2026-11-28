@@ -38,8 +38,9 @@ export interface Options {
    * bindings (wrangler.jsonc); counts are kept by Cloudflare per key and nothing is stored here.
    *   ip      per client address (not applied through the Russian mirror, which hides addresses)
    *   hotspot per hotspot, so nobody can flood one venue's report
+   *   router  per paired router, on /api/router/* (a router checks in every 5 minutes)
    */
-  limits?: { ip?: Limiter; hotspot?: Limiter };
+  limits?: { ip?: Limiter; hotspot?: Limiter; router?: Limiter };
 }
 
 export type Limiter = (key: string) => Promise<boolean>;
@@ -237,6 +238,11 @@ export function createApp(opts: Options) {
       const found = key ? await store.routerByKey(key) : null;
       if (!found) throw new HttpError(401, "Unknown router key. Pair the router again in the Host tab.");
       const { router, hotspot: h } = found;
+      if (opts.limits?.router && !(await opts.limits.router(`rt:${router.id}`))) {
+        return new Response(JSON.stringify({ error: "This router is checking in too often." }), {
+          status: 429, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "retry-after": "60" },
+        });
+      }
       if (path === "/api/router/config" && m === "GET") {
         await store.routerSeen(router.id, null, now());
         return json(200, {

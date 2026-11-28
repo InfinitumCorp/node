@@ -37,3 +37,20 @@ test("through the Russian mirror only the per-hotspot limit applies (addresses a
   assert.equal(r!.status, 404);
   assert.equal(ip.keys.length, 0);
 });
+
+test("a paired router that checks in too often gets 429, other routers don't", async () => {
+  const store = openStore(nodeSqlite());
+  const router = counter(2);
+  const app = createApp({ store, env: {}, verify: async (t) => (t.startsWith("cid_") ? { cid: t } : null), limits: { router } });
+  const call = async (method: string, path: string, body?: unknown, auth?: string) =>
+    (await app(new Request(`https://node.test${path}`, { method, headers: { "content-type": "application/json", ...(auth ? { authorization: `Bearer ${auth}` } : {}) }, body: body === undefined ? undefined : JSON.stringify(body) })))!;
+  await call("PUT", "/api/me/consent", { choices: { host_bandwidth: true } }, "cid_host");
+  const h = await (await call("POST", "/api/me/hotspots", { name: "Café", kind: "business", lat: 55.75, lng: 37.62 }, "cid_host")).json() as any;
+  const a = await (await call("POST", `/api/me/hotspots/${h.hotspot.id}/routers`, {}, "cid_host")).json() as any;
+  const b = await (await call("POST", `/api/me/hotspots/${h.hotspot.id}/routers`, {}, "cid_host")).json() as any;
+  assert.equal((await call("GET", "/api/router/config", undefined, a.key)).status, 200);
+  assert.equal((await call("POST", "/api/router/status", { state: "sharing" }, a.key)).status, 204);
+  assert.equal((await call("GET", "/api/router/config", undefined, a.key)).status, 429);
+  assert.equal((await call("GET", "/api/router/config", undefined, b.key)).status, 200);
+  assert.equal((await call("GET", "/api/router/config", undefined, "nr_wrongwrongwrongwrongwrong")).status, 401);
+});
