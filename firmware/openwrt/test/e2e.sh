@@ -15,7 +15,10 @@ gone() { ! uci -q get "$1" >/dev/null 2>&1 || fail "$1 should be gone"; }
 mkdir -p /etc/init.d /etc/crontabs /var/lock
 for s in network firewall cron sqm; do printf '#!/bin/sh\nexit 0\n' > "/etc/init.d/$s"; chmod 755 "/etc/init.d/$s"; done
 printf '#!/bin/sh\nexit 0\n' > /sbin/wifi; chmod 755 /sbin/wifi
-touch /etc/config/wireless /etc/config/sqm
+touch /etc/config/wireless /etc/config/sqm /etc/config/network
+# A real router writes its network config on first boot; the rootfs image has none.
+uci set network.lan=interface; uci set network.lan.proto=static; uci set network.lan.ipaddr=192.168.1.1
+uci set network.wan=interface; uci set network.wan.proto=dhcp; uci commit network
 uci set wireless.radio0=wifi-device; uci set wireless.radio0.type=mac80211; uci set wireless.radio0.disabled=1
 uci set wireless.default_radio0=wifi-iface; uci set wireless.default_radio0.device=radio0; uci set wireless.default_radio0.ssid=HomeNet
 uci commit wireless
