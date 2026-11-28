@@ -32,6 +32,16 @@ MESH="${MESH:-0}"            # 1 = join the nodemesh backhaul with other Nøde r
 case "$ROLE" in home|business|relay|gateway) ;; *) echo "ROLE must be home, business, relay or gateway" >&2; exit 1 ;; esac
 if [ "$MESH" = 1 ] && [ "${#MESH_KEY}" -lt 32 ]; then echo "MESH=1 needs MESH_KEY of at least 32 characters (keep it out of git)" >&2; exit 1; fi
 [ "$ROLE" != relay ] || [ "$MESH" = 1 ] || { echo "A relay only makes sense with MESH=1" >&2; exit 1; }
+# Check every input before changing anything, so a typo can't leave the router half set up.
+is_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
+is_uint "$MAX_MBPS" && [ "$MAX_MBPS" -ge 1 ] && [ "$MAX_MBPS" -le 10000 ] || { echo "MAX_MBPS must be a whole number of Mbit/s from 1 to 10000" >&2; exit 1; }
+is_uint "$DAILY_MB" || { echo "DAILY_MB must be a whole number of MB" >&2; exit 1; }
+for h in $HOURS; do is_uint "$h" && [ "$h" -le 23 ] || { echo "HOURS must be hours from 0 to 23, separated by spaces" >&2; exit 1; }; done
+n="$(printf '%s' "$SSID" | wc -c)"
+[ "$n" -ge 1 ] && [ "$n" -le 32 ] || { echo "SSID must be 1 to 32 bytes" >&2; exit 1; }
+case "${NODE_KEY:-}" in ''|nr_*) ;; *) echo "NODE_KEY must be the key from the app, starting with nr_" >&2; exit 1 ;; esac
+case "${NODE_KEY:-}" in *[!A-Za-z0-9_-]*) echo "NODE_KEY has characters a Nøde key never has; copy it again from the app" >&2; exit 1 ;; esac
+case "${NODE_API:-https://}" in https://*|http://127.0.0.1:*|http://127.0.0.1/*) ;; *) echo "NODE_API must start with https://" >&2; exit 1 ;; esac
 
 # ---- Nøde settings, read by nod-limits.sh and nod-sync.sh ----
 # A router key from the app (Host > Pair a router) survives re-running setup.

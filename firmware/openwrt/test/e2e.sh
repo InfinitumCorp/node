@@ -23,6 +23,14 @@ uci set wireless.radio0=wifi-device; uci set wireless.radio0.type=mac80211; uci 
 uci set wireless.default_radio0=wifi-iface; uci set wireless.default_radio0.device=radio0; uci set wireless.default_radio0.ssid=HomeNet
 uci commit wireless
 
+echo "== setup refuses bad input and changes nothing"
+cp /etc/config/wireless /tmp/wireless.orig
+for bad in "MAX_MBPS=fast" "MAX_MBPS=0" "DAILY_MB=-5" "HOURS=8 25" "SSID=this-network-name-is-far-too-long-for-wifi" "NODE_KEY=abc" "NODE_KEY=nr_a;rm" "NODE_API=http://example.com" "NODE_API=http://127.0.0.1.evil.example"; do
+  env "$bad" ROLE=home sh ./nod-setup.sh 2>/dev/null && fail "setup accepted $bad"
+done
+cmp -s /etc/config/wireless /tmp/wireless.orig || fail "a refused setup changed the Wi-Fi config"
+[ ! -s /etc/config/node ] || fail "a refused setup wrote /etc/config/node"
+
 echo "== setup, paired"
 echo "configs: $(ls /etc/config | tr '
 ' ' ')"
