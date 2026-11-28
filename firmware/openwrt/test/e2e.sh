@@ -72,6 +72,35 @@ NOD_UPDATE=/nonexistent /usr/sbin/nod-sync
 want node.settings.active 1
 [ "$(sed -n 1p /tmp/node-state)" = sharing ] || fail "state after sync: $(sed -n 1p /tmp/node-state)"
 
+echo "== sync and update against a stand-in Nøde site (busybox httpd)"
+if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg install curl >/dev/null 2>&1; }; then
+  site=/tmp/site; mkdir -p "$site/api/router" "$site/firmware/openwrt"
+  printf '%s' '{"hotspot":"hs_e2e","name":"E2E","ssid":"Nøde Café","active":false,"limits":{"maxMbps":25,"dailyMb":900,"hours":[8,9,10],"maxTempC":42},"poll":300}' > "$site/api/router/config"
+  # The site serves new scripts: a nod-limits that marks itself, and the rest as they are.
+  cp ./nod-sync.sh ./nod-update.sh ./nod-status.sh "$site/firmware/openwrt/"
+  { cat ./nod-limits.sh; echo '# e2e-updated'; } > "$site/firmware/openwrt/nod-limits.sh"
+  (cd "$site/firmware/openwrt" && sha256sum nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh > SHA256SUMS)
+  httpd -p 127.0.0.1:8099 -h "$site"
+  uci set node.settings.api=http://127.0.0.1:8099; uci commit node
+  rm -f /tmp/node-updated
+  /usr/sbin/nod-sync
+  want node.settings.active 0
+  want node.settings.max_mbps 25
+  want node.settings.daily_mb 900
+  want node.settings.hours "8 9 10"
+  want sqm.node_guest.download 25000
+  want wireless.node_ap_radio0.ssid "Nøde Café"
+  want wireless.node_ap_radio0.disabled 1
+  grep -q '# e2e-updated' /usr/sbin/nod-limits || fail "nod-update didn't install the newer nod-limits"
+  echo tampered >> "$site/firmware/openwrt/nod-sync.sh"
+  cp /usr/sbin/nod-sync /tmp/sync.before
+  rm -f /tmp/node-updated; /usr/sbin/nod-update
+  cmp -s /usr/sbin/nod-sync /tmp/sync.before || fail "a tampered nod-sync was installed"
+  uci set node.settings.active=1; uci set node.settings.hours=''; uci commit node
+else
+  echo "(skipped: no curl and opkg couldn't install it)"
+fi
+
 echo "== status"
 /usr/sbin/nod-status > /tmp/status.txt
 grep -q "paired:          yes" /tmp/status.txt || fail "status should say paired"
