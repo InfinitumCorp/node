@@ -6,7 +6,7 @@
 #
 # Russia, without a VPN: use https://node-ru.infinitumcorporation.ai instead (it also becomes the router's API).
 #
-# It downloads nod-setup, nod-limits and nod-sync from the same site, checks them against SHA256SUMS,
+# It downloads nod-setup, nod-limits, nod-sync and nod-update from the same site, checks them against SHA256SUMS,
 # installs curl if it's missing (needed for nod-sync), then runs nod-setup with your settings
 # (ROLE, NODE_KEY, MESH, MESH_KEY, SSID, MAX_MBPS, DAILY_MB, HOURS, UPLINK; see nod-setup.sh).
 # NODE_KEY comes from the app: Host > your hotspot > Pair a router. Without it the router works on its
@@ -25,7 +25,7 @@ fetch() { # fetch <url> <file>
 
 echo "Downloading Nøde router scripts from $base"
 fetch "$base/SHA256SUMS" "$dir/SHA256SUMS"
-for f in nod-setup.sh nod-limits.sh nod-sync.sh; do
+for f in nod-setup.sh nod-limits.sh nod-sync.sh nod-update.sh nod-status.sh; do
   fetch "$base/$f" "$dir/$f"
   want="$(tr -d '\r' < "$dir/SHA256SUMS" | sed -n "s/^\([0-9a-f]\{64\}\) [ *]$f\$/\1/p")"
   got="$(sha256sum "$dir/$f" | cut -d' ' -f1)"

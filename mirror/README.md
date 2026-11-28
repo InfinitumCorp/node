@@ -13,7 +13,7 @@ mirror carry the main issuer, so the Worker verifies them the same way. `/api/*`
 marked `private, no-store` so the CDN never serves the mirror's config on the main site or the
 other way round. Cookies and client IPs are not passed on (Nøde uses neither).
 
-## Status (2026-11-13)
+## Status (2026-11-27)
 
 Live:
 - https://node-ru.web.app (Firebase Hosting site `node-ru`, served by Fastly) and
@@ -22,8 +22,25 @@ Live:
 - Sign-in through the mirror goes to `ru.id.cumuluscloud.app`, which accepts both addresses for
   client `node` (infinitum-nexus #209)
 
-Not checked from a Russian network yet. `ru.id.cumuluscloud.app` itself is served through
-Cloudflare, so if sign-in stalls in Russia, that host needs a Firebase front like this one.
+- `ru.id.cumuluscloud.app` has its own Firebase front too (site `cumulus-id-ru`, Cloud Run
+  `cumulus-id-ru`, switched 2026-11-14; infinitum-nexus #215), so the whole sign-in path is off
+  Cloudflare in Russia.
+- Routers install through the mirror as well: `/firmware/openwrt/nod-install.sh` with
+  `NODE_API=https://node-ru.infinitumcorporation.ai`.
+
+Not checked from a Russian network yet.
+
+## Per-client rate limits (optional)
+
+The mirror hides phones' addresses from Nøde, so by default only the per-hotspot telemetry limit applies to Russian traffic. To keep a per-phone limit, give the mirror and the Worker the same random secret:
+
+```bash
+openssl rand -base64 32                                    # the secret; never commit it
+npx wrangler@4 secret put NODE_MIRROR_SECRET               # the Worker
+gcloud run services update node-mirror --region europe-north1 --project scalvs-mirror --update-env-vars MIRROR_SECRET=<the secret>
+```
+
+The mirror then sends `x-node-mirror-client: <id>.<sig>`, an id derived from the address with the secret (the address itself never leaves the mirror) and a signature the Worker checks. Without the secret both sides behave as before, which means anyone can add `x-node-mirror: ru` to skip the per-address limit (the per-hotspot limit still holds). With the secret set, a request without a valid tag is limited by its own address.
 
 ## Set up (Google Cloud project `scalvs-mirror`, which already hosts the other mirrors)
 

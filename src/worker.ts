@@ -12,6 +12,7 @@ interface Env {
   CID_PUBLIC_ISSUER?: string;
   TELEMETRY_IP?: RateLimit;
   TELEMETRY_HOTSPOT?: RateLimit;
+  ROUTER_LIMIT?: RateLimit;
 }
 
 interface RateLimit { limit(o: { key: string }): Promise<{ success: boolean }> }
@@ -25,7 +26,7 @@ export default {
       const store = openStore(d1(env.DB));
       cached = { db: env.DB, store, handle: createApp({
         store, env: env as unknown as Record<string, unknown>,
-        limits: { ip: limiter(env.TELEMETRY_IP), hotspot: limiter(env.TELEMETRY_HOTSPOT) },
+        limits: { ip: limiter(env.TELEMETRY_IP), hotspot: limiter(env.TELEMETRY_HOTSPOT), router: limiter(env.ROUTER_LIMIT) },
       }) };
     }
     const r = await cached.handle(req);

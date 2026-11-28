@@ -17,7 +17,7 @@ Free community Wi-Fi: fixed gateways at venues and homes, extended by Nøde rout
 | `src/store.ts` | Identity tables and analytics tables that never join |
 | `src/cid.ts` | Cumulus ID token verification (copied from `architect`) |
 | `web/` | The Nøde web app (installable PWA): find Wi-Fi, your data choices, host controls |
-| `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps, schedule and daily limit |
+| `firmware/openwrt/` | Router setup for Nøde Home / Business / Relay / Gateway: isolated guest AP, 802.11s mesh, SQM caps shared fairly between guests, schedule and daily limit |
 | `web/openapi.json` | OpenAPI 3.1 description of the API (served at `/openapi.json`; a test checks it covers every route) |
 | `docs/` | [Hosting guide](docs/HOSTING.md) ([по-русски](docs/HOSTING.ru.md)), [data products](docs/DATA-PRODUCTS.md), [legal guardrails](docs/LEGAL.md), [economics and pilot plan](docs/ECONOMICS.md) |
 
@@ -93,7 +93,7 @@ Pair a Nøde router in the app (Host → your hotspot → Pair a router). The ke
 uci set node.settings.key='nr_...'; uci commit node; nod-sync
 ```
 
-Every 5 minutes `nod-sync` (cron, installed by `nod-setup.sh`) fetches `GET /api/router/config` with `Authorization: Bearer <key>`, applies the start/stop switch, speed cap, daily data cap, hours and network name, runs `nod-limits`, then posts `{state, tempC, usedMb}` to `/api/router/status`. The Host tab shows what each router last reported. Only the host's own totals are sent, never anything about guests. The server stores a SHA-256 hash of the key, not the key. Unreachable server: the router keeps its last settings. In Russia set `uci set node.settings.api='https://node-ru.infinitumcorporation.ai'`.
+Every 5 minutes `nod-sync` (cron, installed by `nod-setup.sh`) fetches `GET /api/router/config` with `Authorization: Bearer <key>`, applies the start/stop switch, speed cap, daily data cap, hours and network name, runs `nod-limits`, then posts `{state, tempC, usedMb}` to `/api/router/status`. The Host tab shows what each router last reported. Only the host's own totals are sent, never anything about guests. The server stores a SHA-256 hash of the key, not the key. Unreachable server: the router keeps its last settings. A refused key (401: unpaired, or the hotspot was deleted) stops sharing. In Russia set `uci set node.settings.api='https://node-ru.infinitumcorporation.ai'`. About once a day a paired router runs `nod-update`, which installs newer scripts from the same site only if they match `SHA256SUMS` and parse; `uci set node.settings.autoupdate=0` turns that off.
 
 ## Not built yet
 

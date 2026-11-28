@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createHandler, rewriteLocation, upstreamHeaders } from "./server.mjs";
+import { MAX_BODY, clientAddress, clientTag, createHandler, rewriteLocation, upstreamHeaders } from "./server.mjs";
 
 test("redirects stay on the mirror; others are left alone", () => {
   const up = "https://node.infinitumcorporation.ai";
@@ -37,5 +37,40 @@ test("passes requests through and keeps API answers out of the CDN", async () =>
 
   const g = await fetch(`${m}/go`, { redirect: "manual", headers: { "x-forwarded-host": "ru.node.example" } });
   assert.equal(g.headers.get("location"), "https://ru.node.example/there");
+
+  const big = await fetch(`${m}/api/telemetry`, { method: "POST", body: "x".repeat(MAX_BODY + 1) });
+  assert.equal(big.status, 413);
+  assert.ok(!seen.some((s) => s.url === "/api/telemetry"), "an oversized body never reaches Nøde");
+  const ok = await fetch(`${m}/api/telemetry`, { method: "POST", body: "{}" });
+  assert.equal(ok.status, 200);
   mirror.close(); upstream.close();
+});
+
+test("the per-client tag is opaque, stable and only sent when a secret is set", () => {
+  assert.equal(clientTag("203.0.113.5", ""), "");
+  const a = clientTag("203.0.113.5", "s3cret"), b = clientTag("203.0.113.5", "s3cret");
+  assert.equal(a, b);
+  assert.match(a, /^[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{22}$/);
+  assert.ok(!a.includes("203"));
+  assert.notEqual(clientTag("203.0.113.6", "s3cret"), a);
+  assert.equal(clientAddress({ "x-forwarded-for": "203.0.113.5, 35.191.0.1" }), "203.0.113.5");
+  const h = upstreamHeaders({ "x-node-mirror-client": "forged.tag", "x-forwarded-for": "1.2.3.4" }, a);
+  assert.equal(h["x-node-mirror-client"], a);
+  assert.equal(h["x-forwarded-for"], undefined);
+  assert.equal(upstreamHeaders({ "x-node-mirror-client": "forged.tag" })["x-node-mirror-client"], undefined);
+});
+
+test("the mirror's own health check answers even when the upstream is down", async () => {
+  const mirror = createServer(createHandler("http://127.0.0.1:9"));
+  await new Promise((r) => mirror.listen(0, r));
+  try {
+    const r = await fetch(`http://127.0.0.1:${mirror.address().port}/__mirror/health`);
+    assert.equal(r.status, 200);
+    assert.equal(await r.text(), "ok");
+    assert.equal(r.headers.get("cache-control"), "no-store");
+    const down = await fetch(`http://127.0.0.1:${mirror.address().port}/healthz`);
+    assert.ok(down.status >= 500, `upstream down should be a 5xx, got ${down.status}`);
+  } finally {
+    mirror.close();
+  }
 });
