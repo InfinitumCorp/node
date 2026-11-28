@@ -71,7 +71,7 @@ The CSP is set in two places that must match: `src/app.ts` (API and local server
 
 **Sign-in.** Cumulus ID only (“Sign in with Cumulus ID” / “Create a Cumulus ID”), via the shared Cumulus bar. Browsing hotspots needs no account.
 
-**Data.** Analytics rows carry a rotating anonymous session id, a ~5 km area and an hour — never an account id. Reports drop any group under 10 sessions and round counts to 5. Free access never depends on an optional purpose; see [docs/LEGAL.md](docs/LEGAL.md).
+**Data.** Analytics rows carry a rotating anonymous session id, a ~5 km area and an hour — never an account id. Reports drop any group under 10 sessions and round counts to 5. Analytics rows are deleted after 100 days. Free access never depends on an optional purpose; see [docs/LEGAL.md](docs/LEGAL.md).
 
 **Analytics.** Amplitude Browser SDK 2.49.2, vendored, US region, page views and sessions only; everything else off. CSP adds only `api2.amplitude.com` and `api.amplitude.com` to `connect-src`.
 
