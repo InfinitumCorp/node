@@ -244,6 +244,8 @@ function limitsForm(l) {
       <label class="field"><span>${t("Stop above temperature (°C)")}</span><input type="number" name="maxTempC" min="30" max="60" value="${l.maxTempC}"></label>
     </div>
     <p class="fine">${t("Share during these hours (none ticked = any time):")}</p>
+    <div class="row start presets">${[["", "Any time"], ["8-19", "Daytime 08–20"], ["9-17", "Office 09–18"], ["18-22", "Evenings 18–23"]]
+      .map(([v, label]) => `<button type="button" class="link" data-hours="${v}">${t(label)}</button>`).join("")}</div>
     <div class="hours">${HOURS.map((h) => `<label><input type="checkbox" name="hour" value="${h}" ${l.hours.includes(h) ? "checked" : ""}>${String(h).padStart(2, "0")}</label>`).join("")}</div>
     <p class="fine">${t("Guests are always on a separate network and can't reach your devices.")}</p>`;
 }
@@ -566,6 +568,14 @@ async function renderSpot() {
   view.querySelector("[data-measure]").addEventListener("click", (e) => measure(h.id, e.currentTarget));
   view.querySelector("[data-problem]")?.addEventListener("change", (e) => reportProblem(e.currentTarget));
 }
+
+// Sharing-hour presets: "8-19" ticks 08 to 19, i.e. sharing from 08:00 until 20:00. "" clears (any time).
+document.addEventListener("click", (e) => {
+  const b = e.target.closest?.("[data-hours]");
+  if (!b) return;
+  const [from, to] = b.dataset.hours ? b.dataset.hours.split("-").map(Number) : [1, 0];
+  b.closest("form")?.querySelectorAll('input[name="hour"]').forEach((i) => { const h = Number(i.value); i.checked = h >= from && h <= to; });
+});
 
 const VIEWS = { find: renderFind, privacy: renderPrivacy, host: renderHost, sign: renderSign, spot: renderSpot };
 async function route() {
