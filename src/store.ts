@@ -79,6 +79,9 @@ type Row = Record<string, unknown>;
 /** What a guest can report about a hotspot. */
 export const PROBLEMS = ["no_internet", "not_found", "asks_password", "slow"] as const;
 export type Problem = (typeof PROBLEMS)[number];
+/** Most reports of one reason counted per hotspot per day, and fewest shown to the host over 7 days. */
+export const PROBLEM_DAILY_CAP = 25;
+export const PROBLEM_FLOOR = 2;
 
 export function openStore(sql: Sql) {
   let ready: Promise<void> | null = null;
@@ -126,6 +129,7 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM routers WHERE owner = ?", cid);
       await sql.run("DELETE FROM hotspot_pauses WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
       await sql.run("DELETE FROM problem_reports WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
+      await sql.run("DELETE FROM problem_seen WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
     },
@@ -141,6 +145,7 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM routers WHERE hotspot = ?", hid);
       await sql.run("DELETE FROM hotspot_pauses WHERE hotspot = ?", hid);
       await sql.run("DELETE FROM problem_reports WHERE hotspot = ?", hid);
+      await sql.run("DELETE FROM problem_seen WHERE hotspot = ?", hid);
       await sql.run("DELETE FROM venue_sessions WHERE hotspot = ?", hid);
       await sql.run("DELETE FROM hotspots WHERE id = ?", hid);
       return true;
@@ -315,10 +320,19 @@ export function openStore(sql: Sql) {
      * A guest says something is wrong at a hotspot. Only a per-day count per reason is kept:
      * no session, address or account, so a report can't be traced to anyone.
      */
-    async addProblem(hotspot: string, reason: Problem, now = Date.now()) {
+    async addProblem(hotspot: string, session: string, reason: Problem, now = Date.now()) {
       await init();
       if (!(await sql.get("SELECT 1 AS x FROM hotspots WHERE id = ?", hotspot))) return false;
       const day = now - (now % 86_400_000);
+      // One counted report per guest, hotspot and day. The token is salted with the hotspot and day so
+      // it can't be matched to anything else, and it's deleted when the day ends.
+      await sql.run("DELETE FROM problem_seen WHERE day < ?", day);
+      const token = await sha256(`problem:${hotspot}:${day}:${session}`);
+      if (await sql.get("SELECT 1 AS x FROM problem_seen WHERE hotspot = ? AND day = ? AND token = ?", hotspot, day, token)) return true;
+      await sql.run("INSERT OR IGNORE INTO problem_seen (hotspot, day, token) VALUES (?, ?, ?)", hotspot, day, token);
+      // A flood of invented sessions still counts at most PROBLEM_DAILY_CAP per reason per day.
+      const n = await sql.get<{ n: number }>("SELECT n FROM problem_reports WHERE hotspot = ? AND day = ? AND reason = ?", hotspot, day, reason);
+      if (n && Number(n.n) >= PROBLEM_DAILY_CAP) return true;
       await sql.run("INSERT INTO problem_reports (hotspot, day, reason, n) VALUES (?, ?, ?, 1) ON CONFLICT (hotspot, day, reason) DO UPDATE SET n = n + 1", hotspot, day, reason);
       await sql.run("DELETE FROM problem_reports WHERE day < ?", day - 35 * 86_400_000);
       return true;
@@ -330,7 +344,8 @@ export function openStore(sql: Sql) {
       const rows = await sql.all("SELECT reason, SUM(n) AS n FROM problem_reports WHERE hotspot = ? AND day >= ? GROUP BY reason", hotspot, from - (from % 86_400_000));
       const out: Record<string, number> = {};
       for (const p of PROBLEMS) out[p] = 0;
-      for (const r of rows) if (String(r.reason) in out) out[String(r.reason)] = Number(r.n);
+      // A single report could be a mistake or a prank, so a reason shows from PROBLEM_FLOOR reports.
+      for (const r of rows) if (String(r.reason) in out && Number(r.n) >= PROBLEM_FLOOR) out[String(r.reason)] = Number(r.n);
       return out as Record<Problem, number>;
     },
 

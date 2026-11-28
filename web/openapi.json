@@ -348,7 +348,7 @@
                       "asks_password",
                       "slow"
                     ],
-                    "description": "With kind \"problem\": what went wrong. Reported on purpose by the guest; only a daily count per reason is stored."
+                    "description": "With kind \"problem\": what went wrong. Only a daily count per reason is stored: one per session per hotspot per day, at most 25 per reason per day. The host sees a reason once it has 2 or more reports in 7 days."
                   }
                 }
               }

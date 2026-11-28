@@ -220,7 +220,7 @@ export function createApp(opts: Options) {
       } else if (b.kind === "problem") {
         // Reported by the guest on purpose, so no consent purpose applies; only a daily count is kept.
         if (!PROBLEMS.includes(b.reason as Problem)) throw new HttpError(400, `reason must be one of ${PROBLEMS.join(", ")}.`);
-        ok = await store.addProblem(hotspot, b.reason as Problem, now());
+        ok = await store.addProblem(hotspot, session, b.reason as Problem, now());
       } else throw new HttpError(400, "kind must be quality, visit or problem.");
       return json(ok ? 202 : 404, ok ? { accepted: true } : { error: "Unknown hotspot." });
     }
