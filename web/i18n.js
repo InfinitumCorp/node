@@ -144,6 +144,8 @@ const RU = {
   "allowed": "разрешено",
   "declined": "отклонено",
   "No choices recorded yet, so the starting choices for where you live apply.": "Решений пока нет, поэтому действуют начальные настройки для вашего региона.",
+  "You're offline. Join any Wi-Fi network named “Nøde” and try again.": "Нет подключения. Подключитесь к любой сети Wi-Fi с названием «Nøde» и попробуйте снова.",
+  "Can't reach Nøde right now. Check your connection and try again.": "Не удаётся связаться с Nøde. Проверьте подключение и попробуйте снова.",
   "Print a sign": "Напечатать табличку",
   "Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).": "Скорость у гостей: за 7 дней пока мало замеров (нужно {n} гостей, разрешивших отчёты о качестве).",
   "Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.": "Гости за 7 дней: около {sessions} сеансов, обычная скорость {down} Мбит/с, подключились {ok}%.",
