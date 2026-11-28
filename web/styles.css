@@ -89,3 +89,4 @@ details#history { margin-top: 12px; } details#history summary { cursor: pointer;
 .check { display: flex; gap: 8px; align-items: center; font-size: 14px; margin: 8px 0; }
 .radar .pin.dim { opacity: .2; }
 .list li[hidden] { display: none; }
+.sign .sign-alt { display: block; font-size: .7em; opacity: .75; }

@@ -158,6 +158,8 @@ const RU = {
   "~{n} sessions": "~{n} сеансов",
   "Busy hours this week, by time of day (hours with fewer than 10 sessions are hidden):": "Загруженность за неделю по времени суток (часы, где меньше 10 сеансов, скрыты):",
   "Only show hotspots a router confirmed in the last 20 minutes": "Показывать только точки, работу которых роутер подтвердил за последние 20 минут",
+  "Sign language": "Язык таблички",
+  "Both": "Оба",
   "Print a sign": "Напечатать табличку",
   "Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).": "Скорость у гостей: за 7 дней пока мало замеров (нужно {n} гостей, разрешивших отчёты о качестве).",
   "Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.": "Гости за 7 дней: около {sessions} сеансов, обычная скорость {down} Мбит/с, подключились {ok}%.",
@@ -289,6 +291,12 @@ export function choose(code) {
 /** t("Network: {ssid}", { ssid }) — English text is the key; falls back to it. */
 export function t(key, vars) {
   const s = (DICTS[lang] && DICTS[lang][key]) || key;
+  return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
+}
+
+/** Like t(), in a given language rather than the page's (for printed signs). */
+export function tIn(code, key, vars) {
+  const s = (DICTS[code] && DICTS[code][key]) || key;
   return vars ? s.replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m)) : s;
 }
 

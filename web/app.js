@@ -1,6 +1,6 @@
 // Nøde web app. No framework; renders three views into <main> from the URL hash.
 import { placePins, ringKm } from "./radar.js";
-import { LANGS, apiError, choose, lang, routerState, setup, t } from "./i18n.js";
+import { LANGS, apiError, choose, lang, routerState, setup, t, tIn } from "./i18n.js";
 import qrcode from "./qrcode.vendor.js";
 
 const $ = (s, el = document) => el.querySelector(s);
@@ -578,19 +578,32 @@ async function renderSign() {
   const h = hotspots.find((x) => x.id === hid);
   if (!h) { view.innerHTML = `<section class="card"><p class="error">${t("No such hotspot.")}</p><a href="#/host">${t("Back to your hotspots")}</a></section>`; return; }
   const url = `${location.origin}/#/spot/${h.id}`;
+  const other = lang === "ru" ? "en" : "ru";
   view.innerHTML = `
     <section class="card no-print"><div class="row between"><a href="#/host">${t("Back to your hotspots")}</a><button class="primary" id="print">${t("Print")}</button></div>
-      <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p></section>
-    <article class="sign">
-      <p class="sign-kicker">${t("Free Wi-Fi")}</p>
+      <p class="fine">${t("Put it where guests can see it. It shows only the network name, never your address.")}</p>
+      <label class="field"><span>${t("Sign language")}</span><select id="signlang">
+        ${[[lang, LANGS.find((l) => l.code === lang)?.name ?? lang], [other, LANGS.find((l) => l.code === other)?.name ?? other], [`${lang}+${other}`, t("Both")]]
+          .map(([v, n]) => `<option value="${esc(v)}">${esc(n)}</option>`).join("")}
+      </select></label></section>
+    <article class="sign"></article>`;
+  const draw = (codes) => {
+    // Each line in the first language, with the second underneath in smaller type.
+    const line = (key, cls = "") => codes.map((c, i) => `<span class="${i ? "sign-alt" : cls}" lang="${c}">${esc(tIn(c, key))}</span>`).join(codes.length > 1 ? "<br>" : "");
+    const art = $(".sign");
+    art.setAttribute("lang", codes[0]);
+    art.innerHTML = `
+      <p class="sign-kicker">${line("Free Wi-Fi")}</p>
       <h1>${esc(h.name)}</h1>
-      <p>${t("Join the network")}</p>
+      <p>${line("Join the network")}</p>
       <p class="sign-ssid">${esc(h.ssid)}</p>
-      <p>${t("No password. Guests are on their own network, kept apart from ours.")}</p>
+      <p>${line("No password. Guests are on their own network, kept apart from ours.")}</p>
       <div class="sign-qr"></div>
-      <p class="fine">${t("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>
-    </article>`;
-  $(".sign-qr").append(qrSvg(url));
+      <p class="fine">${line("Scan to check it's working, report a problem or find more free Wi-Fi:")} ${esc(location.host)}</p>`;
+    $(".sign-qr").append(qrSvg(url));
+  };
+  draw([lang]);
+  $("#signlang").addEventListener("change", (e) => draw(e.currentTarget.value.split("+")));
   $("#print").addEventListener("click", () => window.print());
 }
 
