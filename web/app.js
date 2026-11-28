@@ -114,6 +114,13 @@ function radar(me, hotspots) {
   return svg;
 }
 
+const PROBLEM_TIPS = {
+  no_internet: "No internet: check the router's own connection and that the daily data limit isn't used up.",
+  not_found: "Can't find it: check the network name on your sign matches, and that sharing hours include now.",
+  asks_password: "Asks for a password: the guest network must be open; re-run the router setup or check the phone hotspot settings.",
+  slow: "Too slow: raise the guest speed cap if your connection allows, or move the router closer to where guests sit.",
+};
+
 const PROBLEMS = {
   no_internet: "Connected, but no internet",
   not_found: "Couldn't find the network",
@@ -482,6 +489,7 @@ async function renderHost() {
       const box = el.querySelector("[data-problems]");
       box.textContent = t("Guests reported, last 7 days: {list}", {
         list: seen.map(([k, n]) => t("{what} ({n})", { what: t(PROBLEMS[k] ?? k), n })).join(", ") });
+      box.after(...seen.filter(([k]) => PROBLEM_TIPS[k]).map(([k]) => Object.assign(document.createElement("p"), { className: "fine", textContent: t(PROBLEM_TIPS[k]) })));
       box.hidden = false;
     }).catch(() => {});
     if (h.kind !== "phone") wireRouters(el, h);
