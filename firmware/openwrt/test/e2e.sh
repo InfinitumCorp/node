@@ -46,6 +46,7 @@ want wireless.node_ap_radio0.disabled 1
 want wireless.default_radio0.ssid HomeNet
 want network.guest.ipaddr 10.77.0.1
 want firewall.node_guest.forward REJECT
+want firewall.node_guest.input REJECT
 want firewall.node_guest_wan.dest wan
 want firewall.node_guest_nolan.target REJECT
 want firewall.node_guest_dns.proto "tcp udp"
@@ -66,6 +67,13 @@ rule="$(grep 'Nøde guest no private nets' /tmp/fw.nft)"
 echo "$rule"
 ! echo "$rule" | grep -q 'l4proto' || fail "the private-nets rule must cover every protocol, not just TCP/UDP"
 grep -q 'chain forward_guest' /tmp/fw.nft || fail "no guest forward chain"
+# On the router itself guests may use DNS and DHCP and nothing else (no SSH, no LuCI).
+sed -n '/chain input_guest {/,/^	}/p' /tmp/fw.nft > /tmp/fw.input_guest
+[ -s /tmp/fw.input_guest ] || fail "no guest input chain"
+grep -q 'reject' /tmp/fw.input_guest || fail "guest input must end in a reject: $(cat /tmp/fw.input_guest)"
+if grep 'accept' /tmp/fw.input_guest | grep -v -e 'Nøde guest dns' -e 'Nøde guest dhcp' -e 'ct state' -e 'ct status' -e 'jump accept_from_guest' | grep -q .; then
+  fail "guests can reach more than DNS and DHCP on the router: $(grep accept /tmp/fw.input_guest)"
+fi
 echo "$rule" | grep -q '169.254.0.0/16' || fail "the private-nets rule must cover link-local"
 grep 'Nøde guest dns' /tmp/fw.nft | grep -q tcp || fail "guest DNS must be allowed over TCP: $(grep 'Nøde guest dns' /tmp/fw.nft)"
 
