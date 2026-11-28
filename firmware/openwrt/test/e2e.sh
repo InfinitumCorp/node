@@ -21,7 +21,9 @@ uci set wireless.default_radio0=wifi-iface; uci set wireless.default_radio0.devi
 uci commit wireless
 
 echo "== setup, paired"
-ROLE=home NODE_KEY=nr_e2etestkeye2etestkey00 MAX_MBPS=12 DAILY_MB=500 sh ./nod-setup.sh
+echo "configs: $(ls /etc/config | tr '
+' ' ')"
+ROLE=home NODE_KEY=nr_e2etestkeye2etestkey00 MAX_MBPS=12 DAILY_MB=500 sh ./nod-setup.sh   || { ROLE=home NODE_KEY=nr_e2etestkeye2etestkey00 sh -x ./nod-setup.sh 2>&1 | tail -15; fail "nod-setup failed"; }
 want node.settings.key nr_e2etestkeye2etestkey00
 want node.settings.role home
 want node.settings.active 0
