@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import { createHandler, rewriteLocation, upstreamHeaders } from "./server.mjs";
+import { MAX_BODY, createHandler, rewriteLocation, upstreamHeaders } from "./server.mjs";
 
 test("redirects stay on the mirror; others are left alone", () => {
   const up = "https://node.infinitumcorporation.ai";
@@ -37,5 +37,11 @@ test("passes requests through and keeps API answers out of the CDN", async () =>
 
   const g = await fetch(`${m}/go`, { redirect: "manual", headers: { "x-forwarded-host": "ru.node.example" } });
   assert.equal(g.headers.get("location"), "https://ru.node.example/there");
+
+  const big = await fetch(`${m}/api/telemetry`, { method: "POST", body: "x".repeat(MAX_BODY + 1) });
+  assert.equal(big.status, 413);
+  assert.ok(!seen.some((s) => s.url === "/api/telemetry"), "an oversized body never reaches Nøde");
+  const ok = await fetch(`${m}/api/telemetry`, { method: "POST", body: "{}" });
+  assert.equal(ok.status, 200);
   mirror.close(); upstream.close();
 });

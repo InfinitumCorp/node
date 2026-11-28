@@ -29,10 +29,20 @@ export function upstreamHeaders(incoming) {
   return out;
 }
 
+/** Nøde's API takes at most 16 KB; anything far larger is refused here instead of held in memory. */
+export const MAX_BODY = 256 * 1024;
+class TooLarge extends Error {}
+
 async function readBody(req) {
   if (req.method === "GET" || req.method === "HEAD") return undefined;
+  if (Number(req.headers["content-length"] || 0) > MAX_BODY) throw new TooLarge();
   const chunks = [];
-  for await (const c of req) chunks.push(c);
+  let size = 0;
+  for await (const c of req) {
+    size += c.length;
+    if (size > MAX_BODY) throw new TooLarge();
+    chunks.push(c);
+  }
   return chunks.length ? Buffer.concat(chunks) : undefined;
 }
 
@@ -44,9 +54,15 @@ export function createHandler(upstream = UPSTREAM) {
     }
     const fwd = req.headers["x-forwarded-host"];
     const publicOrigin = PUBLIC_ORIGIN || (fwd ? `https://${String(fwd).split(",")[0].trim()}` : "");
+    let body;
+    try { body = await readBody(req); } catch (e) {
+      if (!(e instanceof TooLarge)) throw e;
+      res.writeHead(413, { "content-type": "application/json", "cache-control": "no-store", connection: "close" });
+      return res.end(JSON.stringify({ error: "Request too large." }));
+    }
     let up;
     try {
-      up = await fetch(upstream + req.url, { method: req.method, headers: upstreamHeaders(req.headers), body: await readBody(req), redirect: "manual" });
+      up = await fetch(upstream + req.url, { method: req.method, headers: upstreamHeaders(req.headers), body, redirect: "manual" });
     } catch {
       res.writeHead(502, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(JSON.stringify({ error: "Nøde can't be reached from the mirror right now. Try again shortly." }));
@@ -56,10 +72,10 @@ export function createHandler(upstream = UPSTREAM) {
     if (out.location) out.location = rewriteLocation(out.location, publicOrigin, upstream);
     // /api/config differs between the mirror and the main site, so the CDN must not mix them up.
     if (req.url?.startsWith("/api/")) out["cache-control"] = "private, no-store";
-    const body = req.method === "HEAD" ? null : Buffer.from(await up.arrayBuffer());
-    if (body) out["content-length"] = String(body.length);
+    const payload = req.method === "HEAD" ? null : Buffer.from(await up.arrayBuffer());
+    if (payload) out["content-length"] = String(payload.length);
     res.writeHead(up.status, out);
-    res.end(body ?? undefined);
+    res.end(payload ?? undefined);
   };
 }
 
