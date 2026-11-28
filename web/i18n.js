@@ -128,7 +128,7 @@ const RU = {
   "Put it where guests can see it. It shows only the network name, never your address.": "Повесьте там, где её увидят гости. На ней только имя сети, без вашего адреса.",
   "Free Wi-Fi": "Бесплатный Wi-Fi",
   "Join the network": "Подключитесь к сети",
-  "No password. Guests are on their own network, kept apart from ours.": "Без пароля. Гости в отдельной сети, отделённой от нашей.",
+  "No password. Guests are on their own network, kept apart from ours.": "Без пароля. Гости в отдельной сети и не видят наши устройства.",
   "Scan to find more free Wi-Fi and choose what you share:": "Отсканируйте, чтобы найти другой бесплатный Wi-Fi и выбрать, чем делиться:",
   "{n} MB": "{n} МБ",
   // states a router reports (firmware/openwrt/nod-limits.sh)
