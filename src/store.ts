@@ -82,8 +82,11 @@ export type Problem = (typeof PROBLEMS)[number];
 /** Most reports of one reason counted per hotspot per day, and fewest shown to the host over 7 days. */
 export const PROBLEM_DAILY_CAP = 25;
 export const PROBLEM_FLOOR = 2;
+/** Anonymous measurements are kept this long, a little over the longest report (92 days), then deleted. */
+export const ANALYTICS_RETENTION_MS = 100 * 86_400_000;
 
 export function openStore(sql: Sql) {
+  let lastPrune = -Infinity;
   let ready: Promise<void> | null = null;
   const init = () => (ready ??= sql.batch(SCHEMA).catch((e) => { ready = null; throw e; }));
 
@@ -317,10 +320,19 @@ export function openStore(sql: Sql) {
     },
 
     // ---- analytics (anonymous) ----
+    /** Deletes anonymous measurements past ANALYTICS_RETENTION_MS. Runs at most once an hour per instance. */
+    async pruneAnalytics(now = Date.now()) {
+      if (now - lastPrune < 3_600_000) return;
+      lastPrune = now;
+      const cutoff = now - ANALYTICS_RETENTION_MS;
+      await sql.run("DELETE FROM quality_samples WHERE hour < ?", cutoff);
+      await sql.run("DELETE FROM venue_sessions WHERE hour < ?", cutoff);
+    },
     async addQualitySample(s: { hotspot: string; session: string; downMbps?: number; upMbps?: number; latencyMs?: number; ok: boolean }, now = Date.now()) {
       await init();
       const h = await sql.get<{ area: string }>("SELECT area FROM hotspots WHERE id = ?", s.hotspot);
       if (!h) return false;
+      await store.pruneAnalytics(now);
       await sql.run("INSERT INTO quality_samples (hotspot, area, hour, session, down_mbps, up_mbps, latency_ms, ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         s.hotspot, h.area.slice(0, 5), hourOf(now), await sha256(s.session), s.downMbps ?? null, s.upMbps ?? null, s.latencyMs ?? null, s.ok ? 1 : 0);
       return true;
@@ -329,6 +341,7 @@ export function openStore(sql: Sql) {
       await init();
       const h = await sql.get<{ kind: string }>("SELECT kind FROM hotspots WHERE id = ?", hotspot);
       if (!h || h.kind !== "business") return false;
+      await store.pruneAnalytics(now);
       await sql.run("INSERT OR IGNORE INTO venue_sessions (hotspot, hour, session) VALUES (?, ?, ?)", hotspot, hourOf(now), await sha256(session));
       return true;
     },

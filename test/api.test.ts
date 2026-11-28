@@ -415,6 +415,24 @@ test("a host's week at a glance adds up their hotspots, routers, guest data and 
   a.close();
 });
 
+test("anonymous measurements are deleted after 100 days", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_old", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_old", body: { name: "Cafe", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const send = (kind: string, session: string) => a.call("POST", "/api/telemetry", { body: { kind, hotspot: h.id, session, downMbps: 10 } });
+  await send("quality", "old"); await send("visit", "old");
+  const count = async () => (await a.store.venueReport(h.id, 0, T0 + 400 * 86_400_000)).suppressed;
+  assert.equal(await count(), 1, "kept while fresh");
+  a.tick(101 * 86_400_000);
+  await send("quality", "new"); await send("visit", "new");
+  a.tick(3_600_000);
+  const q = await a.store.hotspotQuality(h.id, 0, T0 + 400 * 86_400_000);
+  assert.equal(q.enough, false);
+  const all = await a.store.venueReport(h.id, 0, T0 + 400 * 86_400_000);
+  assert.equal(all.suppressed, 1, "only the new hour is left");
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });
