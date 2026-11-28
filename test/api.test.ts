@@ -335,6 +335,26 @@ test("a host sees guests' speed at their own hotspot only once 10 guests measure
   a.close();
 });
 
+test("guests report problems anonymously; the host sees daily counts for 7 days", async () => {
+  const a = await boot();
+  await a.call("PUT", "/api/me/consent", { as: "cid_p", body: { choices: { host_bandwidth: true } } });
+  const h = (await a.call("POST", "/api/me/hotspots", { as: "cid_p", body: { name: "Bakery", kind: "business", lat: 1, lng: 1 } })).json.hotspot;
+  const report = (reason: string, hotspot = h.id) => a.call("POST", "/api/telemetry", { body: { kind: "problem", hotspot, session: "anything", reason } });
+  assert.equal((await report("no_internet")).status, 202);
+  assert.equal((await report("no_internet")).status, 202);
+  assert.equal((await report("slow")).status, 202);
+  assert.equal((await report("rude_staff")).status, 400);
+  assert.equal((await report("slow", "hs_nosuchspot")).status, 404);
+  const get = (as = "cid_p") => a.call("GET", `/api/me/hotspots/${h.id}/problems`, { as });
+  assert.equal((await get("cid_other")).status, 404, "owner only");
+  assert.deepEqual((await get()).json, { days: 7, problems: { no_internet: 2, not_found: 0, asks_password: 0, slow: 1 } });
+  const raw = JSON.stringify(await a.store.export("cid_p"));
+  assert.ok(!raw.includes("anything"), "no session is kept");
+  a.tick(8 * 86_400_000);
+  assert.equal((await get()).json.problems.no_internet, 0, "only the last 7 days count");
+  a.close();
+});
+
 test("erasing an account removes identity data", async () => {
   const a = await boot();
   await a.call("PUT", "/api/me/consent", { as: "cid_z", body: { choices: { research: true, host_bandwidth: true } } });

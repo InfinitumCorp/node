@@ -76,6 +76,10 @@ export async function sha256(s: string): Promise<string> {
 
 type Row = Record<string, unknown>;
 
+/** What a guest can report about a hotspot. */
+export const PROBLEMS = ["no_internet", "not_found", "asks_password", "slow"] as const;
+export type Problem = (typeof PROBLEMS)[number];
+
 export function openStore(sql: Sql) {
   let ready: Promise<void> | null = null;
   const init = () => (ready ??= sql.batch(SCHEMA).catch((e) => { ready = null; throw e; }));
@@ -121,6 +125,7 @@ export function openStore(sql: Sql) {
       await sql.run("DELETE FROM router_days WHERE router IN (SELECT id FROM routers WHERE owner = ?)", cid);
       await sql.run("DELETE FROM routers WHERE owner = ?", cid);
       await sql.run("DELETE FROM hotspot_pauses WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
+      await sql.run("DELETE FROM problem_reports WHERE hotspot IN (SELECT id FROM hotspots WHERE owner = ?)", cid);
       await sql.run("DELETE FROM hotspots WHERE owner = ?", cid);
       await sql.run("DELETE FROM accounts WHERE cid = ?", cid);
     },
@@ -269,6 +274,29 @@ export function openStore(sql: Sql) {
       if (!h || h.kind !== "business") return false;
       await sql.run("INSERT OR IGNORE INTO venue_sessions (hotspot, hour, session) VALUES (?, ?, ?)", hotspot, hourOf(now), await sha256(session));
       return true;
+    },
+
+    /**
+     * A guest says something is wrong at a hotspot. Only a per-day count per reason is kept:
+     * no session, address or account, so a report can't be traced to anyone.
+     */
+    async addProblem(hotspot: string, reason: Problem, now = Date.now()) {
+      await init();
+      if (!(await sql.get("SELECT 1 AS x FROM hotspots WHERE id = ?", hotspot))) return false;
+      const day = now - (now % 86_400_000);
+      await sql.run("INSERT INTO problem_reports (hotspot, day, reason, n) VALUES (?, ?, ?, 1) ON CONFLICT (hotspot, day, reason) DO UPDATE SET n = n + 1", hotspot, day, reason);
+      await sql.run("DELETE FROM problem_reports WHERE day < ?", day - 35 * 86_400_000);
+      return true;
+    },
+
+    /** Problem reports at a hotspot since `from`, counted per reason. */
+    async hotspotProblems(hotspot: string, from: number) {
+      await init();
+      const rows = await sql.all("SELECT reason, SUM(n) AS n FROM problem_reports WHERE hotspot = ? AND day >= ? GROUP BY reason", hotspot, from - (from % 86_400_000));
+      const out: Record<string, number> = {};
+      for (const p of PROBLEMS) out[p] = 0;
+      for (const r of rows) if (String(r.reason) in out) out[String(r.reason)] = Number(r.n);
+      return out as Record<Problem, number>;
     },
 
     // ---- buyers and reports ----

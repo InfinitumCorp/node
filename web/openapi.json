@@ -279,7 +279,7 @@
     },
     "/api/telemetry": {
       "post": {
-        "summary": "Anonymous visit or network-quality sample (only with the matching consent)",
+        "summary": "Anonymous visit or network-quality sample (only with the matching consent), or a problem report",
         "requestBody": {
           "required": true,
           "content": {
@@ -295,7 +295,8 @@
                   "kind": {
                     "enum": [
                       "quality",
-                      "visit"
+                      "visit",
+                      "problem"
                     ]
                   },
                   "hotspot": {
@@ -316,6 +317,15 @@
                   },
                   "latencyMs": {
                     "type": "number"
+                  },
+                  "reason": {
+                    "enum": [
+                      "no_internet",
+                      "not_found",
+                      "asks_password",
+                      "slow"
+                    ],
+                    "description": "With kind \"problem\": what went wrong. Reported on purpose by the guest; only a daily count per reason is stored."
                   }
                 }
               }
@@ -871,6 +881,35 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/me/hotspots/{id}/problems": {
+      "get": {
+        "summary": "Guests’ problem reports at your hotspot over the last 7 days, counted per reason (no session or identity is kept)",
+        "security": [
+          {
+            "cumulusId": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^hs_[A-Za-z0-9_-]{6,20}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "{days:7, problems:{no_internet,not_found,asks_password,slow}}"
+          },
+          "404": {
+            "description": "Not your hotspot"
           }
         }
       }

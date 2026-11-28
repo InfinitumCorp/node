@@ -68,10 +68,11 @@ async function renderFind() {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
         out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
           <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
-          <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button></div></li>`).join("")}</ul>`
+          <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button><br>${problemPicker(h.id)}</div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
         if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
         out.querySelectorAll("[data-measure]").forEach((b) => b.addEventListener("click", () => measure(b.dataset.measure, b)));
+        out.querySelectorAll("[data-problem]").forEach((s) => s.addEventListener("change", () => reportProblem(s)));
       } catch (e) { out.innerHTML = `<p class="error">${esc(e.message)}</p>`; }
     }, () => { out.innerHTML = `<p class="error">${t("Location wasn't shared. You can still join any network named “Nøde”.")}</p>`; }, { maximumAge: 300000, timeout: 15000 });
   });
@@ -110,6 +111,40 @@ function radar(me, hotspots) {
   });
   return svg;
 }
+
+const PROBLEMS = {
+  no_internet: "Connected, but no internet",
+  not_found: "Couldn't find the network",
+  asks_password: "It asked for a password",
+  slow: "Too slow to use",
+};
+
+function problemPicker(id) {
+  if (sessionGet(`problem:${id}`)) return `<span class="fine">${t("Reported. Thank you.")}</span>`;
+  return `<select data-problem="${esc(id)}" aria-label="${esc(t("Report a problem with this hotspot"))}">
+    <option value="">${t("Report a problem…")}</option>
+    ${Object.entries(PROBLEMS).map(([k, v]) => `<option value="${k}">${t(v)}</option>`).join("")}
+  </select>`;
+}
+
+/** Tells the host something is wrong. Only a daily count per reason is kept: nothing about you. */
+async function reportProblem(select) {
+  const hotspot = select.dataset.problem, reason = select.value;
+  if (!reason) return;
+  select.disabled = true;
+  try {
+    await api("POST", "/api/telemetry", { kind: "problem", hotspot, session: sessionId(), reason });
+    sessionSet(`problem:${hotspot}`, "1");
+    select.replaceWith(Object.assign(document.createElement("span"), { className: "fine", textContent: t("Reported. Thank you.") }));
+  } catch (e) {
+    select.disabled = false;
+    select.value = "";
+    select.after(Object.assign(document.createElement("span"), { className: "error", textContent: ` ${e.message}` }));
+  }
+}
+
+function sessionGet(k) { try { return sessionStorage.getItem(`node:${k}`); } catch { return null; } }
+function sessionSet(k, v) { try { sessionStorage.setItem(`node:${k}`, v); } catch { /* private mode */ } }
 
 /** Counts a visit and, if you chose network quality reports, measures latency and download speed. */
 async function measure(hotspot, button) {
@@ -378,6 +413,7 @@ async function renderHost() {
       </div>
       ${limitsForm(h.limits)}<div class="row start"><button>${t("Save changes")}</button>${h.kind === "business" ? `<button type="button" data-activity>${t("Busy hours")}</button>` : ""}<a class="button" href="#/sign/${esc(h.id)}">${t("Print a sign")}</a></div><div data-out class="fine"></div>
       <p class="fine" data-quality></p>
+      <p class="fine warn" data-problems hidden></p>
       ${h.kind === "phone" ? "" : `<h3>${t("Nøde routers")}</h3><div data-routers class="fine">${t("Loading…")}</div>
       <div class="row start"><button type="button" data-pair>${t("Pair a router")}</button></div><div data-key></div>`}`;
     el.querySelector("[data-toggle]").addEventListener("click", async () => { await api("PATCH", `/api/me/hotspots/${h.id}`, { active: !h.active }); renderHost(); });
@@ -411,6 +447,14 @@ async function renderHost() {
         ? t("Guest speed: not enough measurements in the last 7 days yet (needs {n} guests who share network quality).", { n: q.minSessions })
         : t("Guests, last 7 days: about {sessions} sessions, typical download {down} Mbit/s, {ok}% connected.", {
           sessions: q.sessions, down: q.medianDownMbps == null ? "—" : q.medianDownMbps.toLocaleString(lang), ok: Math.round(q.successRate * 100) });
+    }).catch(() => {});
+    api("GET", `/api/me/hotspots/${h.id}/problems`).then(({ problems }) => {
+      const seen = Object.entries(problems).filter(([, n]) => n > 0);
+      if (!seen.length) return;
+      const box = el.querySelector("[data-problems]");
+      box.textContent = t("Guests reported, last 7 days: {list}", {
+        list: seen.map(([k, n]) => t("{what} ({n})", { what: t(PROBLEMS[k] ?? k), n })).join(", ") });
+      box.hidden = false;
     }).catch(() => {});
     if (h.kind !== "phone") wireRouters(el, h);
     spots.append(el);
