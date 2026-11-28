@@ -149,6 +149,8 @@ uci set firewall.node_guest_nolan.proto='all'   # not just TCP/UDP: no pinging t
 uci add_list firewall.node_guest_nolan.dest_ip='192.168.0.0/16'
 uci add_list firewall.node_guest_nolan.dest_ip='172.16.0.0/12'
 uci add_list firewall.node_guest_nolan.dest_ip='10.0.0.0/8'
+uci add_list firewall.node_guest_nolan.dest_ip='100.64.0.0/10'    # carrier-grade NAT: the ISP's own kit
+uci add_list firewall.node_guest_nolan.dest_ip='169.254.0.0/16'   # link-local: some modems answer here
 uci set firewall.node_guest_nolan.target='REJECT'
 
 # ---- SQM guest shaping ----

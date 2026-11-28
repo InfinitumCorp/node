@@ -50,6 +50,7 @@ want firewall.node_guest_wan.dest wan
 want firewall.node_guest_nolan.target REJECT
 want firewall.node_guest_dns.proto "tcp udp"
 want firewall.node_guest_dhcp.proto udp
+want firewall.node_guest_nolan.dest_ip "192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16"
 want sqm.node_guest.download 12000
 want sqm.node_guest.eqdisc_opts dual-dsthost
 grep -q '^\*/5 \* \* \* \* /usr/sbin/nod-sync$' /etc/crontabs/root || fail "cron line missing"
@@ -65,6 +66,7 @@ rule="$(grep 'Nøde guest no private nets' /tmp/fw.nft)"
 echo "$rule"
 ! echo "$rule" | grep -q 'l4proto' || fail "the private-nets rule must cover every protocol, not just TCP/UDP"
 grep -q 'chain forward_guest' /tmp/fw.nft || fail "no guest forward chain"
+echo "$rule" | grep -q '169.254.0.0/16' || fail "the private-nets rule must cover link-local"
 grep 'Nøde guest dns' /tmp/fw.nft | grep -q tcp || fail "guest DNS must be allowed over TCP: $(grep 'Nøde guest dns' /tmp/fw.nft)"
 
 echo "== limits: stopped by host"
@@ -119,9 +121,12 @@ if command -v curl >/dev/null 2>&1 || { opkg update >/dev/null 2>&1 && opkg inst
   uci -q delete sqm.node_guest.eqdisc_opts; uci -q delete sqm.node_guest.iqdisc_opts; uci commit sqm   # a router set up before fair sharing
   uci -q delete firewall.node_guest_nolan.proto; uci commit firewall                                     # and before the all-protocols fix
   uci set firewall.node_guest_dns.proto=udp; uci commit firewall                                         # and before DNS over TCP
+  uci del_list firewall.node_guest_nolan.dest_ip=100.64.0.0/10; uci del_list firewall.node_guest_nolan.dest_ip=169.254.0.0/16; uci commit firewall
   /usr/sbin/nod-sync
   want firewall.node_guest_nolan.proto all
   want firewall.node_guest_dns.proto "tcp udp"
+  want firewall.node_guest_nolan.dest_ip "192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16"
+  /usr/sbin/nod-sync; want firewall.node_guest_nolan.dest_ip "192.168.0.0/16 172.16.0.0/12 10.0.0.0/8 100.64.0.0/10 169.254.0.0/16"   # no duplicates
   want sqm.node_guest.eqdisc_opts dual-dsthost
   want sqm.node_guest.iqdisc_opts dual-srchost
   want node.settings.active 0

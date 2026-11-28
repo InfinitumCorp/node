@@ -83,6 +83,15 @@ else
     logger -t node "sync: guests are now kept off private networks for every protocol"
   fi
 
+  # Routers set up before the ISP and link-local ranges were blocked too.
+  if uci -q get firewall.node_guest_nolan >/dev/null && ! uci -q get firewall.node_guest_nolan.dest_ip | grep -q '169.254.0.0/16'; then
+    uci add_list firewall.node_guest_nolan.dest_ip='100.64.0.0/10'
+    uci add_list firewall.node_guest_nolan.dest_ip='169.254.0.0/16'
+    uci commit firewall
+    /etc/init.d/firewall reload >/dev/null 2>&1 || true
+    logger -t node "sync: guests are now kept off the ISP's and link-local addresses too"
+  fi
+
   # Routers set up before guest DNS allowed TCP (large answers fall back to it).
   if uci -q get firewall.node_guest_dns >/dev/null && [ "$(uci -q get firewall.node_guest_dns.proto || true)" = udp ]; then
     uci set firewall.node_guest_dns.proto='tcp udp'
