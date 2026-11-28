@@ -74,7 +74,7 @@ async function renderFind() {
       try {
         const { hotspots } = await api("GET", `/api/hotspots?lat=${pos.coords.latitude.toFixed(3)}&lng=${pos.coords.longitude.toFixed(3)}`);
         out.innerHTML = hotspots.length ? `<div class="radar-box"></div><ul class="list">${hotspots.map((h, i) => `
-          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong>${esc(h.name)}</strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
+          <li><div><span class="pin-no" aria-hidden="true">${i + 1}</span> <strong><a href="#/spot/${esc(h.id)}">${esc(h.name)}</a></strong>${h.verified ? ` <span class="tag ok" title="${esc(t("A Nøde router reported sharing in the last 20 minutes"))}">${t("live")}</span>` : ""}<br><span class="muted">${esc(t("Network: {ssid} · about {km} km", { ssid: h.ssid, km: h.distanceKm.toLocaleString(lang) }))}</span></div>
           <div><span class="tag">${esc(t(h.kind))}</span><br><button data-measure="${esc(h.id)}">${t("I'm on it")}</button><br>${problemPicker(h.id)}</div></li>`).join("")}</ul>`
           : `<p class="muted">${t("No Nøde hotspots here yet. Coverage grows place by place —")} <a href="#/host">${t("host one")}</a>.</p>`;
         if (hotspots.length) out.querySelector(".radar-box").append(radar(pos.coords, hotspots));
@@ -483,9 +483,21 @@ async function renderHost() {
     });
     el.querySelector("[data-activity]")?.addEventListener("click", async () => {
       const r = await api("GET", `/api/me/hotspots/${h.id}/activity`);
-      el.querySelector("[data-out]").innerHTML = r.rows.length
-        ? r.rows.map((x) => esc(t("{when}: ~{n} sessions", { when: new Date(x.hour).toLocaleString(lang), n: x.sessions }))).join("<br>")
-        : t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden).");
+      const out = el.querySelector("[data-out]");
+      if (!r.rows.length) { out.textContent = t("Not enough visits yet to show (hours with fewer than 10 sessions are hidden)."); return; }
+      // The shown hours, added up by time of day in your time zone.
+      const byHour = new Map();
+      for (const x of r.rows) { const hr = new Date(x.hour).getHours(); byHour.set(hr, (byHour.get(hr) ?? 0) + x.sessions); }
+      const max = Math.max(...byHour.values());
+      const list = document.createElement("ul");
+      list.className = "days";
+      for (const [hr, n] of [...byHour].sort((a, b) => a[0] - b[0])) {
+        const li = document.createElement("li");
+        li.innerHTML = `<span>${esc(`${String(hr).padStart(2, "0")}:00`)}</span><meter min="0"></meter><span>${esc(t("~{n} sessions", { n }))}</span>`;
+        Object.assign(li.querySelector("meter"), { max, value: n });
+        list.append(li);
+      }
+      out.replaceChildren(Object.assign(document.createElement("p"), { textContent: t("Busy hours this week, by time of day (hours with fewer than 10 sessions are hidden):") }), list);
     });
     api("GET", `/api/me/hotspots/${h.id}/quality`).then((q) => {
       el.querySelector("[data-quality]").textContent = !q.enough
