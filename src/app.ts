@@ -206,10 +206,13 @@ export function createApp(opts: Options) {
       const b = await body(req);
       const hotspot = text(b.hotspot, 64, "hotspot");
       const session = text(b.session, 128, "session");
-      // Through the mirror the address is hidden; a signed per-client id from the mirror stands in for it.
-      const ip = req.headers.get("x-node-mirror")
-        ? await mirrorClient(req.headers.get("x-node-mirror-client"), str("NODE_MIRROR_SECRET"))
-        : req.headers.get("cf-connecting-ip") ?? "";
+      // Through the mirror the address is hidden; a signed per-client id from the mirror stands in for
+      // it. Once the mirror secret is set, a request that only claims to be from the mirror (no valid
+      // tag) is limited by its own address like any other. Without the secret, mirror traffic gets
+      // only the per-hotspot limit (it would otherwise share the mirror's single address).
+      const secret = str("NODE_MIRROR_SECRET");
+      const tagged = await mirrorClient(req.headers.get("x-node-mirror-client"), secret);
+      const ip = tagged || (req.headers.get("x-node-mirror") && !secret ? "" : req.headers.get("cf-connecting-ip") ?? "");
       const allowed = (await Promise.all([
         ip && opts.limits?.ip ? opts.limits.ip(`ip:${ip}`) : true,
         opts.limits?.hotspot ? opts.limits.hotspot(`hs:${hotspot}`) : true,

@@ -73,3 +73,12 @@ test("through the mirror a signed per-client id stands in for the address; forge
   assert.equal(ip.keys.length, before, "a forged tag is not used as a key");
   assert.ok(ip.keys.every((k) => k.startsWith("ip:ru:") && !k.includes("198.51")), "addresses never reach Nøde");
 });
+
+test("with the mirror secret set, a request that only claims to come from the mirror is limited by address", async () => {
+  const ip = counter(1), hotspot = counter(100);
+  const app = createApp({ store: openStore(nodeSqlite()), env: { NODE_MIRROR_SECRET: "s3cret-s3cret-s3cret" }, verify: async () => null, limits: { ip, hotspot } });
+  const send = async () => (await app(post({ kind: "visit", hotspot: "hs_one", session: "s" }, { "x-node-mirror": "ru", "cf-connecting-ip": "192.0.2.50" })))!.status;
+  assert.equal(await send(), 404);
+  assert.equal(await send(), 429);
+  assert.deepEqual([...new Set(ip.keys)], ["ip:192.0.2.50"]);
+});
