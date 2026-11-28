@@ -16,7 +16,13 @@ async function api(method, path, body) {
   if (body !== undefined) headers["content-type"] = "application/json";
   const tk = token();
   if (tk) headers.authorization = `Bearer ${tk}`;
-  const r = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+  let r;
+  try { r = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) }); }
+  catch {
+    throw Object.assign(new Error(navigator.onLine === false
+      ? t("You're offline. Join any Wi-Fi network named “Nøde” and try again.")
+      : t("Can't reach Nøde right now. Check your connection and try again.")), { status: 0 });
+  }
   const json = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(json.error ? apiError(json.error) : t("Request failed ({status})", { status: r.status })), { status: r.status });
   return json;
